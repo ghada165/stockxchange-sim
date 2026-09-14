@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: exchange-matching-engine
+
+  # Par defaut: H2 en memoire pour pouvoir lancer le projet immediatement
+  # sans installer PostgreSQL. Pour la soutenance / prod, active le profil
+  # "postgres" (voir application-postgres.yml) avec -Dspring.profiles.active=postgres
+  datasource:
+    url: jdbc:h2:mem:exchange;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: validate   # le schema est gere par Flyway, jamais par Hibernate
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.exchange.matching: DEBUG
