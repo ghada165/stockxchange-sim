@@ -110,6 +110,38 @@ public class MatchingEngine {
         }
     }
 
+    /**
+     * Reinsere un ordre RESTANT (deja actif avant un redemarrage) directement
+     * dans le carnet, sans passer par le matching ni reassigner de sequence.
+     * Reserve exclusivement au rechargement au demarrage (voir OrderBookLoader):
+     * ces ordres n'ont par definition jamais matche entre eux avant l'arret
+     * (sinon ils ne seraient plus actifs), donc les reinserer dans leur ordre
+     * chronologique d'origine ne peut pas en faire matcher deux entre eux.
+     * Ne JAMAIS appeler ceci pour un ordre utilisateur normal: utiliser
+     * submitOrder(), qui applique le matching.
+     */
+    public void restoreOrder(Order order) {
+        Lock lock = symbolLocks.computeIfAbsent(order.getSymbol(), s -> new ReentrantLock());
+        lock.lock();
+        try {
+            OrderBook book = orderBooks.computeIfAbsent(order.getSymbol(), OrderBook::new);
+            book.addOrder(order);
+            activeOrdersById.put(order.getId(), order);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Avance le generateur de sequence pour qu'il ne re-emette jamais un
+     * numero deja utilise par un ordre recharge depuis la persistance.
+     * A appeler une seule fois au demarrage, apres avoir restaure tous les
+     * ordres actifs (voir OrderBookLoader).
+     */
+    public void fastForwardSequence(long atLeast) {
+        sequenceGenerator.updateAndGet(current -> Math.max(current, atLeast));
+    }
+
     public OrderBook getOrderBook(String symbol) {
         return orderBooks.computeIfAbsent(symbol, OrderBook::new);
     }

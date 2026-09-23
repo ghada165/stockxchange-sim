@@ -43,6 +43,23 @@ public class OrderEntity {
     @Column(precision = 19, scale = 4)
     private BigDecimal price;
 
+    /**
+     * Prix de reference utilise pour ESTIMER la reservation de fonds/actions
+     * d'un ordre MARKET au moment de sa soumission (meilleur prix oppose du
+     * carnet a cet instant). Null pour un ordre LIMIT (qui utilise son propre
+     * `price` comme base de reservation, exacte par definition).
+     *
+     * Necessaire pour regler correctement un ordre MARKET plus tard: le
+     * deblocage de fonds doit toujours se faire sur la base du montant
+     * REELLEMENT verrouille au depart, jamais sur le prix d'execution de
+     * chaque trade individuel (qui peut differer si l'ordre consomme
+     * plusieurs niveaux de prix) - sinon le lockedBalance du wallet peut
+     * diverger silencieusement entre plusieurs ordres concurrents du meme
+     * utilisateur.
+     */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal reservationPrice;
+
     @Column(nullable = false, precision = 19, scale = 8)
     private BigDecimal quantity;
 

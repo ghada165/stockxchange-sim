@@ -1,7 +1,7 @@
 package com.exchange.matching.web;
 
-import com.exchange.matching.persistence.entity.OrderEntity;
 import com.exchange.matching.service.TradingService;
+import com.exchange.matching.web.dto.OrderResponse;
 import com.exchange.matching.web.dto.PlaceOrderRequest;
 import com.exchange.matching.web.dto.PlaceOrderResponse;
 import jakarta.validation.Valid;
@@ -49,7 +49,10 @@ public class OrderController {
     }
 
     @GetMapping("/my")
-    public ResponseEntity<List<OrderEntity>> myOrders(@RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(tradingService.getMyOrders(userId));
+    public ResponseEntity<List<OrderResponse>> myOrders(@RequestHeader("X-User-Id") String userId) {
+        List<OrderResponse> orders = tradingService.getMyOrders(userId).stream()
+            .map(OrderResponse::from)
+            .toList();
+        return ResponseEntity.ok(orders);
     }
 }

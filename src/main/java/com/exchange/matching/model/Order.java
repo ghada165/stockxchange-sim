@@ -40,6 +40,29 @@ public class Order {
 
     public Order(String userId, String symbol, OrderSide side, OrderType type,
                  BigDecimal price, BigDecimal quantity) {
+        this(UUID.randomUUID().toString(), userId, symbol, side, type, price, quantity,
+            quantity, OrderStatus.OPEN, Instant.now(), 0L);
+    }
+
+    /**
+     * Reconstruit un Order avec un etat explicite (id, quantite restante,
+     * statut, sequence d'origine). Reserve au rechargement du carnet au
+     * demarrage depuis la persistance (voir OrderBookLoader) - NE PAS
+     * utiliser pour creer un nouvel ordre utilisateur, qui doit toujours
+     * passer par le constructeur public a 6 arguments (id genere, etat
+     * initial OPEN).
+     */
+    public static Order reconstruct(String id, String userId, String symbol, OrderSide side,
+                                     OrderType type, BigDecimal price, BigDecimal quantity,
+                                     BigDecimal remainingQuantity, OrderStatus status,
+                                     Instant createdAt, long sequence) {
+        return new Order(id, userId, symbol, side, type, price, quantity,
+            remainingQuantity, status, createdAt, sequence);
+    }
+
+    private Order(String id, String userId, String symbol, OrderSide side, OrderType type,
+                  BigDecimal price, BigDecimal quantity, BigDecimal remainingQuantity,
+                  OrderStatus status, Instant createdAt, long sequence) {
         if (type == OrderType.LIMIT && price == null) {
             throw new IllegalArgumentException("Un ordre LIMIT doit avoir un prix");
         }
@@ -50,16 +73,17 @@ public class Order {
             throw new IllegalArgumentException("La quantite doit etre strictement positive");
         }
 
-        this.id = UUID.randomUUID().toString();
+        this.id = id;
         this.userId = Objects.requireNonNull(userId, "userId requis");
         this.symbol = Objects.requireNonNull(symbol, "symbol requis");
         this.side = Objects.requireNonNull(side, "side requis");
         this.type = Objects.requireNonNull(type, "type requis");
         this.price = price;
         this.quantity = quantity;
-        this.remainingQuantity = quantity;
-        this.status = OrderStatus.OPEN;
-        this.createdAt = Instant.now();
+        this.remainingQuantity = remainingQuantity;
+        this.status = status;
+        this.createdAt = createdAt;
+        this.sequence = sequence;
     }
 
     // --- Mutations internes (appelees uniquement par le MatchingEngine sous lock) ---
