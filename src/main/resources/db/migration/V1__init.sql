@@ -5,6 +5,7 @@ CREATE TABLE orders (
     side                VARCHAR(8)      NOT NULL,
     type                VARCHAR(8)      NOT NULL,
     price               NUMERIC(19,4),
+    reservation_price NUMERIC(19,4),
     quantity            NUMERIC(19,8)   NOT NULL,
     remaining_quantity  NUMERIC(19,8)   NOT NULL,
     status              VARCHAR(20)     NOT NULL,
