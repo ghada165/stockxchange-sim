@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+:root {
+  /* Base ink surfaces - a deliberate deep slate-blue, not a flat #0B0B0B */
+  --ink-950: #0b131c;
+  --ink-900: #101c28;
+  --ink-800: #16232f;
+  --ink-700: #1f303e;
+  --ink-600: #2c4155;
+
+  /* Text */
+  --paper-100: #eef3f6;
+  --paper-300: #b9c6d1;
+  --paper-500: #7c8fa0;
+
+  /* Functional trading colors - never decorative, always bid/ask/status */
+  --bid-500: #3fb27f;
+  --bid-400: #63c99a;
+  --ask-500: #e5533d;
+  --ask-400: #ec7a68;
+
+  /* Single accent: ticker gold, used sparingly for the primary action */
+  --gold-500: #d9a441;
+  --gold-400: #e6bc6b;
+}
+
+@theme inline {
+  --color-ink-950: var(--ink-950);
+  --color-ink-900: var(--ink-900);
+  --color-ink-800: var(--ink-800);
+  --color-ink-700: var(--ink-700);
+  --color-ink-600: var(--ink-600);
+
+  --color-paper-100: var(--paper-100);
+  --color-paper-300: var(--paper-300);
+  --color-paper-500: var(--paper-500);
+
+  --color-bid-500: var(--bid-500);
+  --color-bid-400: var(--bid-400);
+  --color-ask-500: var(--ask-500);
+  --color-ask-400: var(--ask-400);
+
+  --color-gold-500: var(--gold-500);
+  --color-gold-400: var(--gold-400);
+
+  --font-display: var(--font-space-grotesk);
+  --font-mono: var(--font-plex-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--ink-950);
+  color: var(--paper-100);
+  font-family: var(--font-display), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--gold-500);
+  color: var(--ink-950);
+}
+
+.num {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-500);
+  outline-offset: 2px;
+}
