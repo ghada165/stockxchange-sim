@@ -23,7 +23,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-            .setAllowedOriginPatterns("*") // a restreindre a l'origine du front en prod
+            .setAllowedOriginPatterns("http://localhost:*") // meme regle que CorsConfig
             .withSockJS();
     }
 }

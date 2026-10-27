@@ -38,8 +38,8 @@ class MatchingEngineConcurrencyTest {
         MatchingEngine engine = new MatchingEngine();
 
         int pairs = 500; // 500 achats vs 500 ventes, qty=1, meme prix -> doit tout matcher
-        int threadCount = 16;
-        ExecutorService pool = Executors.newFixedThreadPool(threadCount);
+        // Java 21: un virtual thread par tache (voir cours "Virtual Threads")
+        ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor();
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(pairs * 2);
 
@@ -63,7 +63,7 @@ class MatchingEngineConcurrencyTest {
         assertThat(errors.get()).as("aucune exception dans le moteur").isZero();
 
         BigDecimal totalTraded = allTrades.stream()
-            .map(Trade::getQuantity)
+            .map(Trade::quantity)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // 500 paires de 1 unite -> exactement 500 unites doivent avoir ete echangees,
@@ -79,7 +79,7 @@ class MatchingEngineConcurrencyTest {
     void annulations_concurrentes_aux_soumissions_ne_corrompent_pas_le_carnet() throws InterruptedException {
         MatchingEngine engine = new MatchingEngine();
         int orderCount = 300;
-        ExecutorService pool = Executors.newFixedThreadPool(12);
+        ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor();
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(orderCount);
         AtomicInteger errors = new AtomicInteger(0);
@@ -129,7 +129,7 @@ class MatchingEngineConcurrencyTest {
         pool.submit(() -> {
             try {
                 startLatch.await();
-                List<Trade> trades = engine.submitOrder(order);
+                List<Trade> trades = engine.submitOrder(order).trades();
                 allTrades.addAll(trades);
             } catch (Exception e) {
                 errors.incrementAndGet();

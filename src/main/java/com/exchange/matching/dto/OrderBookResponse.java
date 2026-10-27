@@ -1,4 +1,4 @@
-package com.exchange.matching.web.dto;
+package com.exchange.matching.dto;
 
 import java.util.List;
 

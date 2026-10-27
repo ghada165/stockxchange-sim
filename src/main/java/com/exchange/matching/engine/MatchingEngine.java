@@ -3,6 +3,7 @@ package com.exchange.matching.engine;
 import com.exchange.matching.exception.OrderNotFoundException;
 import com.exchange.matching.model.Order;
 import com.exchange.matching.model.OrderSide;
+import com.exchange.matching.model.OrderStatus;
 import com.exchange.matching.model.OrderType;
 import com.exchange.matching.model.Trade;
 import org.slf4j.Logger;
@@ -13,12 +14,13 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Moteur de matching d'ordres, applique la regle "price-time priority":
@@ -28,15 +30,19 @@ import java.util.concurrent.locks.ReentrantLock;
  * Un ReentrantLock est cree par symbole (pas un lock global). Deux ordres sur
  * des symboles differents peuvent donc etre traites en parallele sans jamais
  * se bloquer mutuellement; deux ordres sur le MEME symbole sont serialises
- * pour garantir l'integrite du carnet (pas de lecture-modification concurrente
- * du meme OrderBook). C'est le point critique verifie par
+ * pour garantir l'integrite du carnet. C'est le point critique verifie par
  * {@code MatchingEngineConcurrencyTest}.
  *
- * PRIX D'EXECUTION: convention standard des exchanges - un trade s'execute
- * toujours au prix de l'ordre PASSIF (celui deja dans le carnet), jamais au
- * prix de l'ordre agressif qui arrive. Ca evite qu'un acheteur agressif a un
- * prix tres haut ne "paie" plus que necessaire: il paie le prix du vendeur
- * deja present.
+ * On utilise ReentrantLock plutot que synchronized: c'est le choix
+ * recommande avec les virtual threads de Java 21 (un bloc synchronized
+ * peut "epingler" le virtual thread sur son thread porteur).
+ *
+ * PRIX D'EXECUTION: un trade s'execute toujours au prix de l'ordre PASSIF
+ * (celui deja dans le carnet), jamais au prix de l'ordre agressif.
+ *
+ * AUTO-TRADE: un utilisateur ne peut jamais executer contre son propre
+ * ordre. Si l'ordre entrant rencontre un ordre du meme utilisateur en tete
+ * du carnet, le reliquat de l'ordre entrant est annule ("cancel newest").
  */
 public class MatchingEngine {
 
@@ -50,17 +56,13 @@ public class MatchingEngine {
     /**
      * Soumet un ordre au moteur. Tente de le matcher immediatement contre le
      * carnet oppose; s'il reste une quantite non executee et que l'ordre est
-     * de type LIMIT, il est place dans le carnet en attente. Un ordre MARKET
-     * dont il reste une quantite non executee (liquidite insuffisante) est
-     * automatiquement annule pour le reliquat: un MARKET ne reste jamais dans
-     * le carnet.
+     * de type LIMIT, il est place dans le carnet en attente. Le reliquat d'un
+     * ordre MARKET est annule: un MARKET ne reste jamais dans le carnet.
      *
-     * @return la liste des trades generes (peut etre vide)
+     * @return les trades generes (peut etre vide) et l'etat de l'ordre apres matching
      */
-    public List<Trade> submitOrder(Order order) {
-        Lock lock = symbolLocks.computeIfAbsent(order.getSymbol(), s -> new ReentrantLock());
-        lock.lock();
-        try {
+    public MatchResult submitOrder(Order order) {
+        return withLock(order.getSymbol(), () -> {
             order.setSequence(sequenceGenerator.incrementAndGet());
             OrderBook book = orderBooks.computeIfAbsent(order.getSymbol(), OrderBook::new);
 
@@ -71,30 +73,25 @@ public class MatchingEngine {
                     book.addOrder(order);
                     activeOrdersById.put(order.getId(), order);
                 } else {
-                    // MARKET partiellement (ou pas du tout) execute: pas de reliquat en carnet.
                     order.cancel();
                     log.debug("Ordre MARKET {} annule pour le reliquat non-executable ({})",
                         order.getId(), order.getRemainingQuantity());
                 }
-            } else if (order.getStatus() == com.exchange.matching.model.OrderStatus.FILLED) {
-                activeOrdersById.remove(order.getId());
             }
-
-            return trades;
-        } finally {
-            lock.unlock();
-        }
+            return new MatchResult(List.copyOf(trades), order.getStatus(), order.getRemainingQuantity());
+        });
     }
 
     /**
-     * Annule un ordre actif (OPEN ou PARTIALLY_FILLED).
+     * Annule un ordre actif (OPEN ou PARTIALLY_FILLED) et le renvoie.
+     * La quantite restante de l'ordre renvoye est la valeur de reference
+     * pour liberer la reservation: elle est lue sous le verrou du symbole,
+     * donc aucun fill concurrent ne peut la modifier entre-temps.
      *
      * @throws OrderNotFoundException si l'ordre n'existe pas ou n'est plus actif
      */
-    public void cancelOrder(String symbol, String orderId) {
-        Lock lock = symbolLocks.computeIfAbsent(symbol, s -> new ReentrantLock());
-        lock.lock();
-        try {
+    public Order cancelOrder(String symbol, String orderId) {
+        return withLock(symbol, () -> {
             Order order = activeOrdersById.get(orderId);
             if (order == null || !order.getSymbol().equals(symbol)) {
                 throw new OrderNotFoundException(orderId);
@@ -105,43 +102,73 @@ public class MatchingEngine {
             }
             order.cancel();
             activeOrdersById.remove(orderId);
-        } finally {
-            lock.unlock();
-        }
+            return order;
+        });
+    }
+
+    /**
+     * Calcule le prix "pire cas" a atteindre pour executer {@code quantity}
+     * sur le carnet oppose: le prix du dernier niveau qu'il faudrait consommer.
+     * Si la liquidite est insuffisante, renvoie le prix du dernier niveau
+     * disponible (le reliquat sera annule). Empty si le carnet oppose est vide.
+     *
+     * Sert de plafond (BUY) / plancher (SELL) a un ordre MARKET: voir
+     * {@link Order#marketWithCap}.
+     */
+    public Optional<BigDecimal> estimatePriceCap(String symbol, OrderSide side, BigDecimal quantity) {
+        return readBook(symbol, book -> {
+            var opposite = side == OrderSide.BUY ? book.viewAsks() : book.viewBids();
+            BigDecimal accumulated = BigDecimal.ZERO;
+            BigDecimal worstPrice = null;
+            for (Map.Entry<BigDecimal, Deque<Order>> level : opposite.entrySet()) {
+                worstPrice = level.getKey();
+                for (Order resting : level.getValue()) {
+                    accumulated = accumulated.add(resting.getRemainingQuantity());
+                }
+                if (accumulated.compareTo(quantity) >= 0) {
+                    break;
+                }
+            }
+            return Optional.ofNullable(worstPrice);
+        });
+    }
+
+    /**
+     * Lit le carnet d'un symbole SOUS SON VERROU. A utiliser pour tout
+     * snapshot (API REST, WebSocket): OrderBook n'est pas thread-safe, une
+     * lecture sans verrou pendant un matching pourrait lever une
+     * ConcurrentModificationException ou lire un etat incoherent.
+     */
+    public <T> T readBook(String symbol, Function<OrderBook, T> reader) {
+        return withLock(symbol, () -> reader.apply(orderBooks.computeIfAbsent(symbol, OrderBook::new)));
     }
 
     /**
      * Reinsere un ordre RESTANT (deja actif avant un redemarrage) directement
      * dans le carnet, sans passer par le matching ni reassigner de sequence.
-     * Reserve exclusivement au rechargement au demarrage (voir OrderBookLoader):
-     * ces ordres n'ont par definition jamais matche entre eux avant l'arret
-     * (sinon ils ne seraient plus actifs), donc les reinserer dans leur ordre
-     * chronologique d'origine ne peut pas en faire matcher deux entre eux.
-     * Ne JAMAIS appeler ceci pour un ordre utilisateur normal: utiliser
-     * submitOrder(), qui applique le matching.
+     * Reserve exclusivement au rechargement au demarrage (voir OrderBookLoader).
      */
     public void restoreOrder(Order order) {
-        Lock lock = symbolLocks.computeIfAbsent(order.getSymbol(), s -> new ReentrantLock());
-        lock.lock();
-        try {
+        withLock(order.getSymbol(), () -> {
             OrderBook book = orderBooks.computeIfAbsent(order.getSymbol(), OrderBook::new);
             book.addOrder(order);
             activeOrdersById.put(order.getId(), order);
-        } finally {
-            lock.unlock();
-        }
+            return null;
+        });
     }
 
     /**
      * Avance le generateur de sequence pour qu'il ne re-emette jamais un
      * numero deja utilise par un ordre recharge depuis la persistance.
-     * A appeler une seule fois au demarrage, apres avoir restaure tous les
-     * ordres actifs (voir OrderBookLoader).
      */
     public void fastForwardSequence(long atLeast) {
         sequenceGenerator.updateAndGet(current -> Math.max(current, atLeast));
     }
 
+    /**
+     * Acces direct au carnet, SANS verrou. Reserve aux tests mono-thread;
+     * en production, passer par {@link #readBook}.
+     */
     public OrderBook getOrderBook(String symbol) {
         return orderBooks.computeIfAbsent(symbol, OrderBook::new);
     }
@@ -165,26 +192,30 @@ public class MatchingEngine {
             Deque<Order> queue = bestLevel.get().getValue();
 
             if (!pricesCross(incoming, levelPrice)) {
-                break; // meilleur prix oppose ne satisfait plus la limite de l'ordre entrant
+                break; // le meilleur prix oppose ne satisfait plus la limite (ou le plafond)
             }
 
             Order resting = queue.peekFirst();
             if (resting == null) {
-                // Niveau vide (ne devrait pas arriver, nettoyage defensif)
                 book.pruneIfEmpty(oppositeSide(incoming.getSide()), levelPrice);
                 continue;
             }
 
-            BigDecimal matchedQty = incoming.getRemainingQuantity()
-                .min(resting.getRemainingQuantity());
+            if (resting.getUserId().equals(incoming.getUserId())) {
+                // Prevention de l'auto-trade: on annule le reliquat de l'ordre entrant.
+                log.info("Auto-trade evite: ordre {} annule (contrepartie {} du meme utilisateur)",
+                    incoming.getId(), resting.getId());
+                incoming.cancel();
+                break;
+            }
+
+            BigDecimal matchedQty = incoming.getRemainingQuantity().min(resting.getRemainingQuantity());
+
+            Order buyOrder = incoming.getSide() == OrderSide.BUY ? incoming : resting;
+            Order sellOrder = incoming.getSide() == OrderSide.SELL ? incoming : resting;
 
             // Convention: execution au prix de l'ordre PASSIF (deja dans le carnet)
-            BigDecimal executionPrice = levelPrice;
-
-            String buyOrderId = incoming.getSide() == OrderSide.BUY ? incoming.getId() : resting.getId();
-            String sellOrderId = incoming.getSide() == OrderSide.SELL ? incoming.getId() : resting.getId();
-
-            Trade trade = new Trade(incoming.getSymbol(), buyOrderId, sellOrderId, executionPrice, matchedQty);
+            Trade trade = Trade.execute(incoming.getSymbol(), buyOrder, sellOrder, levelPrice, matchedQty);
             trades.add(trade);
 
             incoming.reduceRemaining(matchedQty);
@@ -199,29 +230,41 @@ public class MatchingEngine {
                     book.pruneIfEmpty(oppositeSide(incoming.getSide()), levelPrice);
                 }
             }
-            // si resting a encore du volume restant, il reste en tete de file
-            // (priorite time preservee pour le prochain passage de boucle)
         }
 
+        if (incoming.getStatus() == OrderStatus.FILLED) {
+            activeOrdersById.remove(incoming.getId());
+        }
         return trades;
     }
 
     /**
      * Determine si l'ordre entrant peut executer contre un niveau de prix oppose.
-     * Un ordre MARKET croise toujours. Un ordre LIMIT achat croise si son prix
-     * limite est >= au prix de vente propose; un LIMIT vente croise si son prix
-     * limite est <= au prix d'achat propose.
+     * Un LIMIT (ou un MARKET protege par un plafond) achat croise si sa limite
+     * est >= au prix de vente propose; une vente croise si sa limite est <=
+     * au prix d'achat propose. Un MARKET sans plafond croise toujours.
      */
     private boolean pricesCross(Order incoming, BigDecimal oppositeLevelPrice) {
-        if (incoming.getType() == OrderType.MARKET) {
+        BigDecimal limit = incoming.getType() == OrderType.LIMIT ? incoming.getPrice() : incoming.getPriceCap();
+        if (limit == null) {
             return true;
         }
         return incoming.getSide() == OrderSide.BUY
-            ? incoming.getPrice().compareTo(oppositeLevelPrice) >= 0
-            : incoming.getPrice().compareTo(oppositeLevelPrice) <= 0;
+            ? limit.compareTo(oppositeLevelPrice) >= 0
+            : limit.compareTo(oppositeLevelPrice) <= 0;
     }
 
     private OrderSide oppositeSide(OrderSide side) {
         return side == OrderSide.BUY ? OrderSide.SELL : OrderSide.BUY;
+    }
+
+    private <T> T withLock(String symbol, Supplier<T> action) {
+        Lock lock = symbolLocks.computeIfAbsent(symbol, s -> new ReentrantLock());
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
+        }
     }
 }

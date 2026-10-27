@@ -20,6 +20,7 @@ import java.util.List;
  * que le carnet retrouve exactement l'etat qu'il avait avant l'arret.
  */
 @Component
+@org.springframework.core.annotation.Order(1) // avant MarketSeeder: on restaure d'abord, on amorce ensuite seulement si besoin
 public class OrderBookLoader implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(OrderBookLoader.class);

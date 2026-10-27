@@ -1,4 +1,4 @@
-package com.exchange.matching.web.dto;
+package com.exchange.matching.dto;
 
 import com.exchange.matching.model.Order;
 import com.exchange.matching.model.OrderSide;

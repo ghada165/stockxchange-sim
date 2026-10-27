@@ -1,6 +1,7 @@
 package com.exchange.matching.config;
 
 import com.exchange.matching.engine.MatchingEngine;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -11,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
  * services qui en ont besoin, sans coupler le moteur lui-meme au framework.
  */
 @Configuration
+@EnableConfigurationProperties(ExchangeProperties.class)
 public class EngineConfig {
 
     @Bean

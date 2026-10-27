@@ -1,6 +1,7 @@
 package com.exchange.matching.engine;
 
 import com.exchange.matching.model.Order;
+import com.exchange.matching.model.OrderSide;
 
 import java.math.BigDecimal;
 import java.util.ArrayDeque;
@@ -48,8 +49,8 @@ public class OrderBook {
         return symbol;
     }
 
-    private NavigableMap<BigDecimal, Deque<Order>> sideBook(com.exchange.matching.model.OrderSide side) {
-        return side == com.exchange.matching.model.OrderSide.BUY ? bids : asks;
+    private NavigableMap<BigDecimal, Deque<Order>> sideBook(OrderSide side) {
+        return side == OrderSide.BUY ? bids : asks;
     }
 
     /** Ajoute un ordre LIMIT au carnet (queue FIFO du niveau de prix). */
@@ -92,8 +93,8 @@ public class OrderBook {
         return asks.isEmpty() ? Optional.empty() : Optional.of(asks.firstEntry());
     }
 
-    /** Supprime un niveau de prix du cote achat s'il est vide. */
-    public void pruneIfEmpty(com.exchange.matching.model.OrderSide side, BigDecimal price) {
+    /** Supprime un niveau de prix (cote achat ou vente) s'il est vide. */
+    public void pruneIfEmpty(OrderSide side, BigDecimal price) {
         NavigableMap<BigDecimal, Deque<Order>> book = sideBook(side);
         Deque<Order> level = book.get(price);
         if (level != null && level.isEmpty()) {
@@ -106,8 +107,8 @@ public class OrderBook {
     }
 
     /**
-     * Snapshot en lecture seule du carnet, pour diffusion (WebSocket) ou debug.
-     * Ne pas exposer les Deque internes directement pour eviter toute mutation externe.
+     * Vue directe sur les niveaux du carnet. A lire UNIQUEMENT sous le verrou
+     * du symbole (MatchingEngine.readBook) et sans jamais la modifier.
      */
     public NavigableMap<BigDecimal, Deque<Order>> viewBids() {
         return bids;

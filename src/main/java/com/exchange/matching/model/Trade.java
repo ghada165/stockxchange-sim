@@ -5,41 +5,36 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Represente une transaction executee entre un ordre acheteur et un ordre
- * vendeur. Immutable: une fois cree, un trade ne change jamais.
+ * Transaction executee entre un ordre acheteur et un ordre vendeur.
+ *
+ * C'est un record: une donnee immuable par nature (un trade ne change
+ * jamais une fois execute). Le record genere le constructeur, les
+ * accesseurs (id(), price()...), equals(), hashCode() et toString().
+ *
+ * La methode {@link #execute} sert de fabrique: elle genere l'id et
+ * l'horodatage, pour que le moteur n'ait a fournir que les donnees metier.
  */
-public final class Trade {
+public record Trade(
+    String id,
+    String symbol,
+    String buyOrderId,
+    String sellOrderId,
+    String buyerId,
+    String sellerId,
+    BigDecimal price,
+    BigDecimal quantity,
+    Instant executedAt
+) {
 
-    private final String id;
-    private final String symbol;
-    private final String buyOrderId;
-    private final String sellOrderId;
-    private final BigDecimal price;
-    private final BigDecimal quantity;
-    private final Instant executedAt;
-
-    public Trade(String symbol, String buyOrderId, String sellOrderId,
-                 BigDecimal price, BigDecimal quantity) {
-        this.id = UUID.randomUUID().toString();
-        this.symbol = symbol;
-        this.buyOrderId = buyOrderId;
-        this.sellOrderId = sellOrderId;
-        this.price = price;
-        this.quantity = quantity;
-        this.executedAt = Instant.now();
+    public static Trade execute(String symbol, Order buyOrder, Order sellOrder,
+                                BigDecimal price, BigDecimal quantity) {
+        return new Trade(UUID.randomUUID().toString(), symbol,
+            buyOrder.getId(), sellOrder.getId(), buyOrder.getUserId(), sellOrder.getUserId(),
+            price, quantity, Instant.now());
     }
 
-    public String getId() { return id; }
-    public String getSymbol() { return symbol; }
-    public String getBuyOrderId() { return buyOrderId; }
-    public String getSellOrderId() { return sellOrderId; }
-    public BigDecimal getPrice() { return price; }
-    public BigDecimal getQuantity() { return quantity; }
-    public Instant getExecutedAt() { return executedAt; }
-
-    @Override
-    public String toString() {
-        return "Trade{symbol='%s', price=%s, qty=%s, buy=%s, sell=%s}"
-            .formatted(symbol, price, quantity, buyOrderId, sellOrderId);
+    /** Montant en cash de la transaction (prix x quantite). */
+    public BigDecimal notional() {
+        return price.multiply(quantity);
     }
 }

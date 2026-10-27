@@ -1,9 +1,9 @@
-package com.exchange.matching.web;
+package com.exchange.matching.controller;
 
+import com.exchange.matching.dto.OrderResponse;
+import com.exchange.matching.dto.PlaceOrderRequest;
+import com.exchange.matching.dto.PlaceOrderResponse;
 import com.exchange.matching.service.TradingService;
-import com.exchange.matching.web.dto.OrderResponse;
-import com.exchange.matching.web.dto.PlaceOrderRequest;
-import com.exchange.matching.web.dto.PlaceOrderResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,12 +12,12 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
+ * Ordres de l'utilisateur: placement, annulation, historique.
+ *
  * NOTE AUTH: l'identite de l'utilisateur est recue via l'en-tete X-User-Id
- * en attendant l'ajout de Spring Security + JWT (prevu plus tard dans le
- * planning du semestre). A remplacer par un principal authentifie
- * (@AuthenticationPrincipal) une fois la securite en place - ne pas
- * utiliser cet en-tete tel quel en production, un client pourrait usurper
- * n'importe quel utilisateur.
+ * en attendant l'ajout de Spring Security + JWT. A remplacer par un
+ * principal authentifie (@AuthenticationPrincipal): tel quel, un client
+ * pourrait se faire passer pour n'importe quel utilisateur.
  */
 @RestController
 @RequestMapping("/api/orders")
@@ -29,6 +29,7 @@ public class OrderController {
         this.tradingService = tradingService;
     }
 
+    /** POST /api/orders : passer un ordre LIMIT ou MARKET. */
     @PostMapping
     public ResponseEntity<PlaceOrderResponse> placeOrder(
         @RequestHeader("X-User-Id") String userId,
@@ -38,21 +39,21 @@ public class OrderController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    /** DELETE /api/orders/{orderId} : annuler un ordre encore actif. */
     @DeleteMapping("/{orderId}")
     public ResponseEntity<Void> cancelOrder(
         @RequestHeader("X-User-Id") String userId,
-        @RequestParam String symbol,
         @PathVariable String orderId
     ) {
-        tradingService.cancelOrder(userId, symbol, orderId);
+        tradingService.cancelOrder(userId, orderId);
         return ResponseEntity.noContent().build();
     }
 
+    /** GET /api/orders/my : historique des ordres de l'utilisateur, du plus recent au plus ancien. */
     @GetMapping("/my")
-    public ResponseEntity<List<OrderResponse>> myOrders(@RequestHeader("X-User-Id") String userId) {
-        List<OrderResponse> orders = tradingService.getMyOrders(userId).stream()
+    public List<OrderResponse> myOrders(@RequestHeader("X-User-Id") String userId) {
+        return tradingService.getMyOrders(userId).stream()
             .map(OrderResponse::from)
             .toList();
-        return ResponseEntity.ok(orders);
     }
 }

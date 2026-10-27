@@ -24,6 +24,16 @@ public class Order {
     /** Null pour un ordre MARKET. */
     private final BigDecimal price;
 
+    /**
+     * Protection de prix d'un ordre MARKET (null pour un LIMIT, ou pour un
+     * MARKET sans protection). Un MARKET BUY ne s'execute jamais au-dessus
+     * de ce prix, un MARKET SELL jamais en dessous. Le service fixe ce
+     * plafond au moment de la reservation des fonds: c'est ce qui garantit
+     * qu'un acheteur ne depense jamais plus que ce qui a ete bloque sur son
+     * wallet, meme si l'ordre traverse plusieurs niveaux de prix.
+     */
+    private final BigDecimal priceCap;
+
     private final BigDecimal quantity;
     private BigDecimal remainingQuantity;
     private OrderStatus status;
@@ -40,8 +50,19 @@ public class Order {
 
     public Order(String userId, String symbol, OrderSide side, OrderType type,
                  BigDecimal price, BigDecimal quantity) {
-        this(UUID.randomUUID().toString(), userId, symbol, side, type, price, quantity,
+        this(UUID.randomUUID().toString(), userId, symbol, side, type, price, null, quantity,
             quantity, OrderStatus.OPEN, Instant.now(), 0L);
+    }
+
+    /**
+     * Cree un ordre MARKET protege par un prix plafond (BUY) ou plancher (SELL).
+     * Voir {@link #getPriceCap()}.
+     */
+    public static Order marketWithCap(String userId, String symbol, OrderSide side,
+                                      BigDecimal quantity, BigDecimal priceCap) {
+        return new Order(UUID.randomUUID().toString(), userId, symbol, side, OrderType.MARKET,
+            null, Objects.requireNonNull(priceCap, "priceCap requis"), quantity, quantity,
+            OrderStatus.OPEN, Instant.now(), 0L);
     }
 
     /**
@@ -56,12 +77,12 @@ public class Order {
                                      OrderType type, BigDecimal price, BigDecimal quantity,
                                      BigDecimal remainingQuantity, OrderStatus status,
                                      Instant createdAt, long sequence) {
-        return new Order(id, userId, symbol, side, type, price, quantity,
+        return new Order(id, userId, symbol, side, type, price, null, quantity,
             remainingQuantity, status, createdAt, sequence);
     }
 
     private Order(String id, String userId, String symbol, OrderSide side, OrderType type,
-                  BigDecimal price, BigDecimal quantity, BigDecimal remainingQuantity,
+                  BigDecimal price, BigDecimal priceCap, BigDecimal quantity, BigDecimal remainingQuantity,
                   OrderStatus status, Instant createdAt, long sequence) {
         if (type == OrderType.LIMIT && price == null) {
             throw new IllegalArgumentException("Un ordre LIMIT doit avoir un prix");
@@ -79,6 +100,7 @@ public class Order {
         this.side = Objects.requireNonNull(side, "side requis");
         this.type = Objects.requireNonNull(type, "type requis");
         this.price = price;
+        this.priceCap = priceCap;
         this.quantity = quantity;
         this.remainingQuantity = remainingQuantity;
         this.status = status;
@@ -129,6 +151,7 @@ public class Order {
     public OrderSide getSide() { return side; }
     public OrderType getType() { return type; }
     public BigDecimal getPrice() { return price; }
+    public BigDecimal getPriceCap() { return priceCap; }
     public BigDecimal getQuantity() { return quantity; }
     public BigDecimal getRemainingQuantity() { return remainingQuantity; }
     public OrderStatus getStatus() { return status; }

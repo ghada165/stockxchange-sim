@@ -1,67 +1,95 @@
 "use client";
 
-import { OrderBookLevel, OrderBookResponse } from "@/lib/api";
+import { OrderBookLevel, OrderBookResponse, toNumber } from "@/lib/api";
+import { formatPrice, formatQty } from "@/lib/format";
 
-function Levels({ levels, side }: { levels: OrderBookLevel[]; side: "bid" | "ask" }) {
+const DEPTH = 8;
+
+function Levels({
+  levels,
+  side,
+  maxQty,
+  onPickPrice,
+}: {
+  levels: OrderBookLevel[];
+  side: "bid" | "ask";
+  maxQty: number;
+  onPickPrice: (price: number) => void;
+}) {
   const color = side === "bid" ? "text-bid-400" : "text-ask-400";
   const barColor = side === "bid" ? "bg-bid-500/15" : "bg-ask-500/15";
-  const maxQty = Math.max(...levels.map((l) => parseFloat(l.totalQuantity)), 1);
 
   if (levels.length === 0) {
-    return <p className="py-6 text-center text-xs text-paper-500">Aucun ordre</p>;
+    return <p className="py-4 text-center text-xs text-paper-500">Aucun ordre</p>;
   }
 
   return (
-    <div className="flex flex-col">
+    <ul>
       {levels.map((level) => {
-        const qty = parseFloat(level.totalQuantity);
-        const widthPct = Math.max((qty / maxQty) * 100, 4);
+        const qty = toNumber(level.totalQuantity);
+        const widthPct = Math.max((qty / maxQty) * 100, 3);
         return (
-          <div key={level.price} className="relative flex justify-between px-3 py-1 text-sm">
-            <div
-              className={`absolute inset-y-0 ${side === "bid" ? "right-0" : "left-0"} ${barColor}`}
-              style={{ width: `${widthPct}%` }}
-              aria-hidden
-            />
-            <span className={`num relative ${color}`}>{parseFloat(level.price).toFixed(2)}</span>
-            <span className="num relative text-paper-300">{level.totalQuantity}</span>
-          </div>
+          <li key={String(level.price)}>
+            <button
+              type="button"
+              onClick={() => onPickPrice(toNumber(level.price))}
+              title="Reprendre ce prix dans le formulaire"
+              className="relative grid w-full grid-cols-3 px-3 py-1 text-sm hover:bg-ink-800"
+            >
+              <span className={`absolute inset-y-0 right-0 ${barColor}`} style={{ width: `${widthPct}%` }} aria-hidden />
+              <span className={`num relative text-left ${color}`}>{formatPrice(level.price)}</span>
+              <span className="num relative text-right text-paper-300">{formatQty(level.totalQuantity)}</span>
+              <span className="num relative text-right text-paper-500">{level.orderCount}</span>
+            </button>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 
-export function OrderBookPanel({ book, symbol }: { book: OrderBookResponse | null; symbol: string }) {
-  const bids = book?.bids ?? [];
-  const asks = [...(book?.asks ?? [])].reverse();
+export function OrderBookPanel({
+  book,
+  symbol,
+  onPickPrice,
+}: {
+  book: OrderBookResponse | null;
+  symbol: string;
+  onPickPrice: (price: number) => void;
+}) {
+  const bids = (book?.bids ?? []).slice(0, DEPTH);
+  const asksNearFirst = (book?.asks ?? []).slice(0, DEPTH);
+  const asks = [...asksNearFirst].reverse(); // meilleure vente en bas, au contact du spread
+  const maxQty = Math.max(...[...bids, ...asksNearFirst].map((l) => toNumber(l.totalQuantity)), 1);
 
-  const bestBid = bids[0] ? parseFloat(bids[0].price) : null;
-  const bestAsk = book?.asks[0] ? parseFloat(book.asks[0].price) : null;
-  const spread = bestBid !== null && bestAsk !== null ? (bestAsk - bestBid).toFixed(2) : "—";
+  const bestBid = bids[0] ? toNumber(bids[0].price) : NaN;
+  const bestAsk = asksNearFirst[0] ? toNumber(asksNearFirst[0].price) : NaN;
 
   return (
     <section className="border border-ink-700">
       <header className="flex items-center justify-between border-b border-ink-700 px-3 py-2">
         <h2 className="text-xs tracking-wide text-paper-500">Carnet d&apos;ordres — {symbol}</h2>
-        <span className="num text-xs text-paper-500">spread {spread}</span>
+        <span className="text-xs text-paper-500">clic = reprendre le prix</span>
       </header>
-      <div className="grid grid-cols-2 divide-x divide-ink-700">
-        <div>
-          <div className="flex justify-between px-3 py-1 text-xs text-paper-500">
-            <span>Vente</span>
-            <span>Qte</span>
-          </div>
-          <Levels levels={asks} side="ask" />
-        </div>
-        <div>
-          <div className="flex justify-between px-3 py-1 text-xs text-paper-500">
-            <span>Achat</span>
-            <span>Qte</span>
-          </div>
-          <Levels levels={bids} side="bid" />
-        </div>
+
+      <div className="grid grid-cols-3 px-3 py-1 text-xs text-paper-500">
+        <span>Prix</span>
+        <span className="text-right">Quantité</span>
+        <span className="text-right">Ordres</span>
       </div>
+
+      {!book ? (
+        <p className="py-6 text-center text-xs text-paper-500">Chargement…</p>
+      ) : (
+        <>
+          <Levels levels={asks} side="ask" maxQty={maxQty} onPickPrice={onPickPrice} />
+          <div className="num flex justify-between border-y border-ink-700 bg-ink-900 px-3 py-1.5 text-xs text-paper-500">
+            <span>spread</span>
+            <span className="text-paper-300">{formatPrice(bestAsk - bestBid)}</span>
+          </div>
+          <Levels levels={bids} side="bid" maxQty={maxQty} onPickPrice={onPickPrice} />
+        </>
+      )}
     </section>
   );
 }

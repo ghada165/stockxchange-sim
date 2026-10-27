@@ -44,18 +44,11 @@ public class OrderEntity {
     private BigDecimal price;
 
     /**
-     * Prix de reference utilise pour ESTIMER la reservation de fonds/actions
-     * d'un ordre MARKET au moment de sa soumission (meilleur prix oppose du
-     * carnet a cet instant). Null pour un ordre LIMIT (qui utilise son propre
-     * `price` comme base de reservation, exacte par definition).
-     *
-     * Necessaire pour regler correctement un ordre MARKET plus tard: le
-     * deblocage de fonds doit toujours se faire sur la base du montant
-     * REELLEMENT verrouille au depart, jamais sur le prix d'execution de
-     * chaque trade individuel (qui peut differer si l'ordre consomme
-     * plusieurs niveaux de prix) - sinon le lockedBalance du wallet peut
-     * diverger silencieusement entre plusieurs ordres concurrents du meme
-     * utilisateur.
+     * Prix unitaire qui a servi a BLOQUER les fonds/actions de l'ordre:
+     * le prix limite pour un LIMIT, le prix plafond (ou plancher) pour un
+     * MARKET. Toute liberation de reservation (trade, annulation, reliquat
+     * MARKET) se fait sur cette base, jamais sur le prix d'execution: c'est
+     * ce qui garde le lockedBalance du wallet exact au centime pres.
      */
     @Column(precision = 19, scale = 4)
     private BigDecimal reservationPrice;
@@ -81,14 +74,15 @@ public class OrderEntity {
     }
 
     public OrderEntity(String id, String userId, String symbol, OrderSide side, OrderType type,
-                        BigDecimal price, BigDecimal quantity, BigDecimal remainingQuantity,
-                        OrderStatus status, Instant createdAt, long sequence) {
+                        BigDecimal price, BigDecimal reservationPrice, BigDecimal quantity,
+                        BigDecimal remainingQuantity, OrderStatus status, Instant createdAt, long sequence) {
         this.id = id;
         this.userId = userId;
         this.symbol = symbol;
         this.side = side;
         this.type = type;
         this.price = price;
+        this.reservationPrice = reservationPrice;
         this.quantity = quantity;
         this.remainingQuantity = remainingQuantity;
         this.status = status;
@@ -104,6 +98,9 @@ public class OrderEntity {
     public OrderSide getSide() { return side; }
     public OrderType getType() { return type; }
     public BigDecimal getPrice() { return price; }
+
+    /** Prix de reservation; repli sur le prix limite pour les lignes anterieures a cette colonne. */
+    public BigDecimal getReservationPrice() { return reservationPrice != null ? reservationPrice : price; }
     public BigDecimal getQuantity() { return quantity; }
     public BigDecimal getRemainingQuantity() { return remainingQuantity; }
     public void setRemainingQuantity(BigDecimal remainingQuantity) { this.remainingQuantity = remainingQuantity; }
@@ -111,4 +108,5 @@ public class OrderEntity {
     public void setStatus(OrderStatus status) { this.status = status; }
     public Instant getCreatedAt() { return createdAt; }
     public long getSequence() { return sequence; }
+    public void setSequence(long sequence) { this.sequence = sequence; }
 }

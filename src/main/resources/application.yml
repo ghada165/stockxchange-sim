@@ -2,6 +2,13 @@ spring:
   application:
     name: exchange-matching-engine
 
+  # Java 21: chaque requete HTTP est traitee par un virtual thread
+  # (leger, gere par la JVM) au lieu d'un thread systeme du pool Tomcat.
+  # Ideal ici: une requete passe l'essentiel de son temps a attendre la base.
+  threads:
+    virtual:
+      enabled: true
+
   # Par defaut: H2 en memoire pour pouvoir lancer le projet immediatement
   # sans installer PostgreSQL. Pour la soutenance / prod, active le profil
   # "postgres" (voir application-postgres.yml) avec -Dspring.profiles.active=postgres
@@ -12,8 +19,9 @@ spring:
     password:
 
   jpa:
+    open-in-view: false     # pas de session JPA ouverte pendant le rendu de la reponse
     hibernate:
-      ddl-auto: validate   # le schema est gere par Flyway, jamais par Hibernate
+      ddl-auto: validate    # le schema est gere par Flyway, jamais par Hibernate
     properties:
       hibernate:
         format_sql: true
@@ -22,6 +30,17 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+# Configuration metier (record ExchangeProperties)
+exchange:
+  starting-balance: 100000     # cash offert a chaque nouveau compte ($)
+  starting-shares: 100         # actions offertes par symbole a chaque nouveau compte
+  seed-market: true            # amorce le carnet avec un teneur de marche au demarrage
+  symbols:                     # symboles cotes -> prix de reference ($)
+    AAPL: 230.00
+    TSLA: 250.00
+    MSFT: 420.00
+    GOOGL: 170.00
 
 server:
   port: 8080
