@@ -1,24 +1,36 @@
 package com.exchange.matching.web.dto;
 
 import com.exchange.matching.model.Trade;
+import com.exchange.matching.persistence.entity.TradeEntity;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
-public class TradeResponse {
-    public String id;
-    public String symbol;
-    public BigDecimal price;
-    public BigDecimal quantity;
-    public Instant executedAt;
+public record TradeResponse(
+    String id,
+    String symbol,
+    BigDecimal price,
+    BigDecimal quantity,
+    Instant executedAt
+) {
 
     public static TradeResponse from(Trade trade) {
-        TradeResponse r = new TradeResponse();
-        r.id = trade.getId();
-        r.symbol = trade.getSymbol();
-        r.price = trade.getPrice();
-        r.quantity = trade.getQuantity();
-        r.executedAt = trade.getExecutedAt();
-        return r;
+        return new TradeResponse(
+            trade.getId(),
+            trade.getSymbol(),
+            trade.getPrice(),
+            trade.getQuantity(),
+            trade.getExecutedAt()
+        );
+    }
+
+    public static TradeResponse from(TradeEntity entity) {
+        return new TradeResponse(
+            entity.getId(),
+            entity.getSymbol(),
+            entity.getPrice(),
+            entity.getQuantity(),
+            entity.getExecutedAt()
+        );
     }
 }

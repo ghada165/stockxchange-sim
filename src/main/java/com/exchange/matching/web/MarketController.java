@@ -1,6 +1,5 @@
 package com.exchange.matching.web;
 
-import com.exchange.matching.persistence.entity.TradeEntity;
 import com.exchange.matching.service.TradingService;
 import com.exchange.matching.web.dto.OrderBookResponse;
 import com.exchange.matching.web.dto.TradeResponse;
@@ -29,17 +28,7 @@ public class MarketController {
     @GetMapping("/{symbol}/trades")
     public List<TradeResponse> recentTrades(@PathVariable String symbol) {
         return tradingService.getRecentTrades(symbol).stream()
-            .map(this::toResponse)
+            .map(TradeResponse::from)
             .toList();
-    }
-
-    private TradeResponse toResponse(TradeEntity entity) {
-        TradeResponse r = new TradeResponse();
-        r.id = entity.getId();
-        r.symbol = entity.getSymbol();
-        r.price = entity.getPrice();
-        r.quantity = entity.getQuantity();
-        r.executedAt = entity.getExecutedAt();
-        return r;
     }
 }
