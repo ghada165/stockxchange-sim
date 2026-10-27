@@ -1,6 +1,8 @@
 package com.exchange.matching.service;
 
 import com.exchange.matching.config.ExchangeProperties;
+import com.exchange.matching.exception.ForbiddenOperationException;
+import com.exchange.matching.exception.MarketClosedException;
 import com.exchange.matching.dto.*;
 import com.exchange.matching.engine.MatchResult;
 import com.exchange.matching.engine.MatchingEngine;
@@ -12,11 +14,13 @@ import com.exchange.matching.exception.OrderNotFoundException;
 import com.exchange.matching.model.*;
 import com.exchange.matching.persistence.entity.OrderEntity;
 import com.exchange.matching.persistence.entity.PositionEntity;
+import com.exchange.matching.persistence.entity.SymbolEntity;
 import com.exchange.matching.persistence.entity.TradeEntity;
 import com.exchange.matching.persistence.entity.WalletEntity;
 import com.exchange.matching.persistence.repository.OrderRepository;
 import com.exchange.matching.persistence.repository.PositionRepository;
 import com.exchange.matching.persistence.repository.TradeRepository;
+import com.exchange.matching.persistence.repository.UserRepository;
 import com.exchange.matching.persistence.repository.WalletRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +58,13 @@ public class TradingService {
 
     private static final Logger log = LoggerFactory.getLogger(TradingService.class);
 
+    /**
+     * Compte systeme du teneur de marche de demonstration. Il n'a pas de
+     * compte utilisateur (on ne peut pas se connecter avec) et n'est pas
+     * soumis aux heures d'ouverture, pour pouvoir amorcer le carnet.
+     */
+    public static final String MARKET_MAKER = "market-maker";
+
     private final MatchingEngine matchingEngine;
     private final OrderRepository orderRepository;
     private final TradeRepository tradeRepository;
@@ -62,6 +73,10 @@ public class TradingService {
     private final MarketBroadcaster broadcaster;
     private final ExchangeProperties properties;
     private final TransactionTemplate transactionTemplate;
+    private final SymbolService symbolService;
+    private final MarketHoursService marketHours;
+    private final UserRepository userRepository;
+    private final ActivityLogService activityLog;
 
     public TradingService(MatchingEngine matchingEngine,
                           OrderRepository orderRepository,
@@ -70,7 +85,11 @@ public class TradingService {
                           PositionRepository positionRepository,
                           MarketBroadcaster broadcaster,
                           ExchangeProperties properties,
-                          TransactionTemplate transactionTemplate) {
+                          TransactionTemplate transactionTemplate,
+                          SymbolService symbolService,
+                          MarketHoursService marketHours,
+                          UserRepository userRepository,
+                          ActivityLogService activityLog) {
         this.matchingEngine = matchingEngine;
         this.orderRepository = orderRepository;
         this.tradeRepository = tradeRepository;
@@ -79,6 +98,10 @@ public class TradingService {
         this.broadcaster = broadcaster;
         this.properties = properties;
         this.transactionTemplate = transactionTemplate;
+        this.symbolService = symbolService;
+        this.marketHours = marketHours;
+        this.userRepository = userRepository;
+        this.activityLog = activityLog;
     }
 
     // ------------------------------------------------------------------
@@ -86,7 +109,12 @@ public class TradingService {
     // ------------------------------------------------------------------
 
     public PlaceOrderResponse placeOrder(String userId, PlaceOrderRequest request) {
-        validateRequest(request);
+        try {
+            checkAllowed(userId, request);
+        } catch (MarketClosedException | ForbiddenOperationException e) {
+            activityLog.record(userId, ActivityType.ORDER_REJECTED, describe(request) + ": " + e.getMessage());
+            throw e;
+        }
 
         Order order = buildOrder(userId, request);
         BigDecimal reservationPrice = order.getType() == OrderType.LIMIT ? order.getPrice() : order.getPriceCap();
@@ -107,7 +135,33 @@ public class TradingService {
         // 4. Diffusion temps reel, seulement une fois tout commite
         broadcast(order.getSymbol(), result.trades());
 
+        if (!MARKET_MAKER.equals(userId)) {
+            BigDecimal executed = order.getQuantity().subtract(result.remainingQuantity());
+            activityLog.record(userId, ActivityType.ORDER_PLACED, describe(request) + " -> " + result.status()
+                + " (" + executed.stripTrailingZeros().toPlainString() + " executee(s), " + result.trades().size() + " trade(s))");
+        }
         return PlaceOrderResponse.of(order, result);
+    }
+
+    /**
+     * Regles d'acces au marche, dans l'ordre: compte non suspendu, symbole
+     * cote et non suspendu, marche ouvert, puis coherence prix / type.
+     */
+    private void checkAllowed(String userId, PlaceOrderRequest request) {
+        if (userRepository.findByUsername(userId).map(u -> !u.isActive()).orElse(false)) {
+            throw new ForbiddenOperationException("Votre compte est suspendu: aucun nouvel ordre n'est accepte");
+        }
+        symbolService.requireTradable(request.symbol());
+        if (!MARKET_MAKER.equals(userId)) {
+            marketHours.requireOpen();
+        }
+        validateRequest(request);
+    }
+
+    private static String describe(PlaceOrderRequest request) {
+        String price = request.price() == null ? "au marche" : "a " + request.price().toPlainString();
+        return request.side() + " " + request.quantity().stripTrailingZeros().toPlainString() + " "
+            + request.symbol() + " " + request.type() + " " + price;
     }
 
     /**
@@ -117,10 +171,6 @@ public class TradingService {
      */
     private void validateRequest(PlaceOrderRequest request) {
         switch (request) {
-            case PlaceOrderRequest(String symbol, OrderSide side, OrderType type, BigDecimal price, BigDecimal quantity)
-                when !properties.isListed(symbol) ->
-                throw new IllegalArgumentException("Symbole inconnu: " + symbol
-                    + " (cotes: " + String.join(", ", properties.symbols().keySet()) + ")");
             case PlaceOrderRequest(String symbol, OrderSide side, OrderType type, BigDecimal price, BigDecimal quantity)
                 when type == OrderType.LIMIT && price == null ->
                 throw new IllegalArgumentException("Un ordre LIMIT doit avoir un prix");
@@ -211,7 +261,8 @@ public class TradingService {
 
         for (Trade trade : trades) {
             tradeRepository.save(new TradeEntity(trade.id(), trade.symbol(), trade.buyOrderId(),
-                trade.sellOrderId(), trade.price(), trade.quantity(), trade.executedAt()));
+                trade.sellOrderId(), trade.buyerId(), trade.sellerId(), trade.price(), trade.quantity(),
+                trade.executedAt()));
 
             OrderEntity buyOrder = orders.get(trade.buyOrderId());
             BigDecimal cost = trade.notional();
@@ -297,6 +348,8 @@ public class TradingService {
             order.setStatus(OrderStatus.CANCELLED);
         });
 
+        activityLog.record(userId, ActivityType.ORDER_CANCELLED, snapshot.getSide() + " " + symbol
+            + " (ordre " + orderId.substring(0, 8) + ")");
         broadcast(symbol, List.of());
     }
 
@@ -338,18 +391,21 @@ public class TradingService {
     @Transactional(readOnly = true)
     public List<MarketSummaryResponse> getMarketSummaries() {
         List<MarketSummaryResponse> summaries = new ArrayList<>();
-        properties.symbols().forEach((symbol, referencePrice) -> {
+        for (SymbolEntity listed : symbolService.list()) {
+            String symbol = listed.getSymbol();
             BigDecimal lastPrice = tradeRepository.findTopBySymbolOrderByExecutedAtDesc(symbol)
                 .map(TradeEntity::getPrice)
                 .orElse(null);
             summaries.add(matchingEngine.readBook(symbol, (OrderBook book) -> new MarketSummaryResponse(
                 symbol,
-                referencePrice,
+                listed.getName(),
+                listed.getStatus(),
+                listed.getReferencePrice(),
                 lastPrice,
                 book.bestBid().orElse(null),
                 book.bestAsk().orElse(null)
             )));
-        });
+        }
         return summaries;
     }
 
@@ -364,6 +420,12 @@ public class TradingService {
     // Helpers
     // ------------------------------------------------------------------
 
+    /** Ouvre le compte de trading d'un utilisateur s'il n'existe pas encore (inscription, demo). */
+    @Transactional
+    public void openAccount(String userId) {
+        ensureAccount(userId);
+    }
+
     /**
      * Ouvre le compte d'un nouvel utilisateur: un wallet avec le solde de
      * demo, et une position de depart sur chaque symbole cote (sinon personne
@@ -374,7 +436,7 @@ public class TradingService {
             return;
         }
         walletRepository.save(new WalletEntity(userId, properties.startingBalance()));
-        for (String symbol : properties.symbols().keySet()) {
+        for (String symbol : symbolService.codes()) {
             PositionEntity position = new PositionEntity(userId, symbol);
             position.credit(properties.startingShares());
             positionRepository.save(position);
@@ -393,9 +455,7 @@ public class TradingService {
     }
 
     private void requireListed(String symbol) {
-        if (!properties.isListed(symbol)) {
-            throw new IllegalArgumentException("Symbole inconnu: " + symbol);
-        }
+        symbolService.require(symbol);
     }
 
     private OrderEntity toNewEntity(Order order, BigDecimal reservationPrice) {

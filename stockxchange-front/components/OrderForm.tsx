@@ -5,8 +5,9 @@ import { api, OrderBookResponse, OrderSide, OrderType, toNumber, WalletResponse 
 import { formatMoney, formatQty } from "@/lib/format";
 
 interface OrderFormProps {
-  userId: string;
   symbol: string;
+  /** Cotation suspendue ou marche ferme: le formulaire reste visible mais desactive. */
+  disabledReason: string | null;
   book: OrderBookResponse | null;
   wallet: WalletResponse | null;
   /** Prix choisi en cliquant sur un niveau du carnet (nonce pour re-declencher le meme prix). */
@@ -30,7 +31,7 @@ function estimateMarket(book: OrderBookResponse | null, side: OrderSide, qty: nu
   return { total, filled: qty - remaining, shortfall: remaining };
 }
 
-export function OrderForm({ userId, symbol, book, wallet, pickedPrice, onPlaced }: OrderFormProps) {
+export function OrderForm({ symbol, disabledReason, book, wallet, pickedPrice, onPlaced }: OrderFormProps) {
   const [side, setSide] = useState<OrderSide>("BUY");
   const [type, setType] = useState<OrderType>("LIMIT");
   const [price, setPrice] = useState("");
@@ -73,7 +74,7 @@ export function OrderForm({ userId, symbol, book, wallet, pickedPrice, onPlaced 
     e.preventDefault();
     setSubmitting(true);
     try {
-      const response = await api.placeOrder(userId, {
+      const response = await api.placeOrder({
         symbol,
         side,
         type,
@@ -205,6 +206,12 @@ export function OrderForm({ userId, symbol, book, wallet, pickedPrice, onPlaced 
           </div>
         </dl>
 
+        {disabledReason && (
+          <p role="alert" className="border border-ask-500/40 bg-ask-500/10 px-2 py-1.5 text-xs text-ask-400">
+            {disabledReason}
+          </p>
+        )}
+
         {warning && (
           <p role="alert" className="text-xs text-ask-400">
             {warning}
@@ -213,7 +220,7 @@ export function OrderForm({ userId, symbol, book, wallet, pickedPrice, onPlaced 
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || disabledReason !== null}
           className={`mt-1 py-2 text-sm font-medium text-ink-950 transition-opacity hover:opacity-90 disabled:opacity-50 ${
             isBuy ? "bg-bid-500" : "bg-ask-500"
           }`}

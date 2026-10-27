@@ -27,3 +27,22 @@ export function formatPercent(value: number): string {
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("fr-FR");
 }
+
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" });
+}
+
+export const DAY_LABELS: Record<string, string> = {
+  MONDAY: "Lun",
+  TUESDAY: "Mar",
+  WEDNESDAY: "Mer",
+  THURSDAY: "Jeu",
+  FRIDAY: "Ven",
+  SATURDAY: "Sam",
+  SUNDAY: "Dim",
+};
+
+/** "09:00:00" -> "09:00" */
+export function formatClock(time: string): string {
+  return time.slice(0, 5);
+}

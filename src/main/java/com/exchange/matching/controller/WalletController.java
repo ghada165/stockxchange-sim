@@ -2,12 +2,12 @@ package com.exchange.matching.controller;
 
 import com.exchange.matching.dto.WalletResponse;
 import com.exchange.matching.service.TradingService;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Portefeuille de l'utilisateur: cash et positions. */
+/** Module Wallet & Positions (role TRADER). */
 @RestController
 @RequestMapping("/api/wallet")
 public class WalletController {
@@ -20,7 +20,7 @@ public class WalletController {
 
     /** GET /api/wallet : solde, solde bloque, solde disponible et positions. */
     @GetMapping
-    public WalletResponse myWallet(@RequestHeader("X-User-Id") String userId) {
-        return tradingService.getWallet(userId);
+    public WalletResponse myWallet(Authentication authentication) {
+        return tradingService.getWallet(authentication.getName());
     }
 }

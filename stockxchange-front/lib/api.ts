@@ -1,6 +1,10 @@
+import { getSession, setSession, Session, SessionUser } from "./session";
+
 export type OrderSide = "BUY" | "SELL";
 export type OrderType = "LIMIT" | "MARKET";
 export type OrderStatus = "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "REJECTED";
+export type AccountStatus = "ACTIVE" | "SUSPENDED";
+export type DayOfWeek = "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY" | "SUNDAY";
 
 /** Le backend serialise les BigDecimal en nombres JSON. */
 export type Decimal = number | string;
@@ -61,10 +65,101 @@ export interface WalletResponse {
 
 export interface MarketSummary {
   symbol: string;
+  name: string;
+  status: AccountStatus;
   referencePrice: Decimal;
   lastPrice: Decimal | null;
   bestBid: Decimal | null;
   bestAsk: Decimal | null;
+}
+
+export interface MarketStatus {
+  open: boolean;
+  enforced: boolean;
+  openTime: string;
+  closeTime: string;
+  zone: string;
+  tradingDays: DayOfWeek[];
+  serverTime: string;
+}
+
+export interface Candle {
+  start: string;
+  open: Decimal;
+  high: Decimal;
+  low: Decimal;
+  close: Decimal;
+  volume: Decimal;
+}
+
+export interface SymbolStats {
+  symbol: string;
+  since: string;
+  tradeCount: number;
+  volume: Decimal;
+  turnover: Decimal;
+  averagePrice: Decimal | null;
+  open: Decimal | null;
+  high: Decimal | null;
+  low: Decimal | null;
+  last: Decimal | null;
+  changePercent: Decimal | null;
+}
+
+export interface MyTrade {
+  id: string;
+  symbol: string;
+  side: OrderSide;
+  price: Decimal;
+  quantity: Decimal;
+  amount: Decimal;
+  executedAt: string;
+}
+
+export interface TradeHistory {
+  username: string;
+  generatedAt: string;
+  summary: {
+    tradeCount: number;
+    buyCount: number;
+    sellCount: number;
+    totalBought: Decimal;
+    totalSold: Decimal;
+    netCashFlow: Decimal;
+  };
+  trades: MyTrade[];
+}
+
+export interface AdminOverview {
+  users: number;
+  traders: number;
+  suspendedUsers: number;
+  symbols: number;
+  suspendedSymbols: number;
+  activeOrders: number;
+  tradesLast24h: number;
+  volumeLast24h: Decimal;
+  turnoverLast24h: Decimal;
+  marketOpen: boolean;
+}
+
+export interface AdminUser {
+  username: string;
+  displayName: string | null;
+  email: string | null;
+  role: "TRADER" | "ADMIN";
+  status: AccountStatus;
+  createdAt: string;
+  cashBalance: Decimal | null;
+  activeOrders: number;
+}
+
+export interface ActivityLog {
+  id: number;
+  occurredAt: string;
+  actor: string;
+  action: string;
+  details: string | null;
 }
 
 export interface PlaceOrderPayload {
@@ -77,49 +172,103 @@ export interface PlaceOrderPayload {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
-async function request<T>(path: string, userId: string | null, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getSession()?.token;
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        ...(userId ? { "X-User-Id": userId } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.headers ?? {}),
       },
     });
   } catch {
     throw new Error("Serveur injoignable — le backend Spring tourne-t-il sur " + API_BASE + " ?");
   }
+  if (res.status === 401 && token) {
+    setSession(null); // jeton expire ou invalide: retour en mode visiteur
+    throw new Error("Session expirée, reconnectez-vous");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(body.message ?? `Erreur ${res.status}`);
+    const fallback = res.status === 403 ? "Accès refusé" : `Erreur ${res.status}`;
+    throw new Error(body.message || fallback);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
+const json = (method: string, body?: unknown): RequestInit => ({
+  method,
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+interface AuthResponse {
+  token: string;
+  expiresAt: string;
+  user: SessionUser;
+}
+
+async function authenticate(path: string, body: unknown): Promise<Session> {
+  const response = await request<AuthResponse>(path, json("POST", body));
+  const session: Session = { token: response.token, expiresAt: response.expiresAt, user: response.user };
+  setSession(session);
+  return session;
+}
+
 export const api = {
-  placeOrder: (userId: string, order: PlaceOrderPayload) =>
-    request<PlaceOrderResponse>("/api/orders", userId, {
-      method: "POST",
-      body: JSON.stringify(order),
-    }),
+  // Auth & Utilisateurs
+  login: (username: string, password: string) => authenticate("/api/auth/login", { username, password }),
+  register: (payload: { username: string; password: string; displayName?: string; email?: string }) =>
+    authenticate("/api/auth/register", payload),
+  logout: () => setSession(null),
+  me: () => request<SessionUser>("/api/auth/me"),
+  updateProfile: (payload: { displayName: string; email: string }) =>
+    request<SessionUser>("/api/auth/me", json("PUT", payload)),
 
-  cancelOrder: (userId: string, orderId: string) =>
-    request<void>(`/api/orders/${encodeURIComponent(orderId)}`, userId, { method: "DELETE" }),
+  // Ordres & Wallet (trader)
+  placeOrder: (order: PlaceOrderPayload) => request<PlaceOrderResponse>("/api/orders", json("POST", order)),
+  cancelOrder: (orderId: string) => request<void>(`/api/orders/${encodeURIComponent(orderId)}`, json("DELETE")),
+  myOrders: () => request<OrderResponse[]>("/api/orders/my"),
+  wallet: () => request<WalletResponse>("/api/wallet"),
+  history: () => request<TradeHistory>("/api/history/trades"),
 
-  myOrders: (userId: string) => request<OrderResponse[]>("/api/orders/my", userId),
+  // Marche (public)
+  marketStatus: () => request<MarketStatus>("/api/market/status"),
+  symbols: () => request<MarketSummary[]>("/api/market/symbols"),
+  orderBook: (symbol: string) => request<OrderBookResponse>(`/api/market/${encodeURIComponent(symbol)}/orderbook`),
+  recentTrades: (symbol: string) => request<TradeResponse[]>(`/api/market/${encodeURIComponent(symbol)}/trades`),
+  candles: (symbol: string, interval: string) =>
+    request<Candle[]>(`/api/market/${encodeURIComponent(symbol)}/candles?interval=${interval}`),
+  stats: (symbol: string) => request<SymbolStats>(`/api/market/${encodeURIComponent(symbol)}/stats`),
 
-  wallet: (userId: string) => request<WalletResponse>("/api/wallet", userId),
-
-  symbols: () => request<MarketSummary[]>("/api/market/symbols", null),
-
-  orderBook: (symbol: string) =>
-    request<OrderBookResponse>(`/api/market/${encodeURIComponent(symbol)}/orderbook`, null),
-
-  recentTrades: (symbol: string) =>
-    request<TradeResponse[]>(`/api/market/${encodeURIComponent(symbol)}/trades`, null),
+  // Administration
+  admin: {
+    overview: () => request<AdminOverview>("/api/admin/overview"),
+    users: () => request<AdminUser[]>("/api/admin/users"),
+    setUserStatus: (username: string, status: AccountStatus) =>
+      request<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}/status`, json("PATCH", { status })),
+    createSymbol: (payload: { symbol: string; name: string; referencePrice: number }) =>
+      request<MarketSummary>("/api/admin/symbols", json("POST", payload)),
+    setSymbolStatus: (symbol: string, status: AccountStatus) =>
+      request<MarketSummary>(`/api/admin/symbols/${encodeURIComponent(symbol)}/status`, json("PATCH", { status })),
+    updateMarketHours: (payload: {
+      open: string;
+      close: string;
+      zone: string;
+      tradingDays: DayOfWeek[];
+      enforced: boolean;
+    }) => request<MarketStatus>("/api/admin/market-hours", json("PUT", payload)),
+    logs: (filter: { actor?: string; action?: string }) => {
+      const params = new URLSearchParams();
+      if (filter.actor) params.set("actor", filter.actor);
+      if (filter.action) params.set("action", filter.action);
+      const query = params.toString();
+      return request<ActivityLog[]>(`/api/admin/logs${query ? `?${query}` : ""}`);
+    },
+  },
 };
 
 export { API_BASE };

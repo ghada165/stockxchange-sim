@@ -25,6 +25,12 @@ public class TradeEntity {
     @Column(nullable = false)
     private String sellOrderId;
 
+    /** Utilisateur acheteur (null pour les trades anterieurs a la migration V2). */
+    private String buyerId;
+
+    /** Utilisateur vendeur (null pour les trades anterieurs a la migration V2). */
+    private String sellerId;
+
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal price;
 
@@ -38,11 +44,14 @@ public class TradeEntity {
     }
 
     public TradeEntity(String id, String symbol, String buyOrderId, String sellOrderId,
+                        String buyerId, String sellerId,
                         BigDecimal price, BigDecimal quantity, Instant executedAt) {
         this.id = id;
         this.symbol = symbol;
         this.buyOrderId = buyOrderId;
         this.sellOrderId = sellOrderId;
+        this.buyerId = buyerId;
+        this.sellerId = sellerId;
         this.price = price;
         this.quantity = quantity;
         this.executedAt = executedAt;
@@ -52,6 +61,8 @@ public class TradeEntity {
     public String getSymbol() { return symbol; }
     public String getBuyOrderId() { return buyOrderId; }
     public String getSellOrderId() { return sellOrderId; }
+    public String getBuyerId() { return buyerId; }
+    public String getSellerId() { return sellerId; }
     public BigDecimal getPrice() { return price; }
     public BigDecimal getQuantity() { return quantity; }
     public Instant getExecutedAt() { return executedAt; }

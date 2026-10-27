@@ -33,14 +33,41 @@ spring:
 
 # Configuration metier (record ExchangeProperties)
 exchange:
-  starting-balance: 100000     # cash offert a chaque nouveau compte ($)
+  starting-balance: 100000     # cash offert a chaque nouveau compte trader ($)
   starting-shares: 100         # actions offertes par symbole a chaque nouveau compte
-  seed-market: true            # amorce le carnet avec un teneur de marche au demarrage
-  symbols:                     # symboles cotes -> prix de reference ($)
-    AAPL: 230.00
-    TSLA: 250.00
-    MSFT: 420.00
-    GOOGL: 170.00
+  seed-market: true            # le teneur de marche amorce les carnets vides au demarrage
+  seed-demo-users: true        # cree alice, bob, carol (mot de passe: password123)
+
+  # Symboles cotes au premier demarrage (ensuite geres par l'admin)
+  symbols:
+    - symbol: AAPL
+      name: Apple Inc.
+      reference-price: 230.00
+    - symbol: TSLA
+      name: Tesla Inc.
+      reference-price: 250.00
+    - symbol: MSFT
+      name: Microsoft Corp.
+      reference-price: 420.00
+    - symbol: GOOGL
+      name: Alphabet Inc.
+      reference-price: 170.00
+
+  # Heures d'ouverture initiales (ensuite modifiables par l'admin).
+  # enforced: false -> marche toujours ouvert, pratique pour une demo le soir.
+  market-hours:
+    open: "09:00"
+    close: "17:30"
+    zone: Europe/Paris
+    days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
+    enforced: false
+
+  security:
+    # Cle de signature des JWT (32 caracteres minimum). A surcharger en production:
+    # variable d'environnement EXCHANGE_SECURITY_JWT_SECRET
+    jwt-secret: ${EXCHANGE_SECURITY_JWT_SECRET:stockxchange-sim-dev-secret-change-me-0123456789}
+    token-validity: 8h
+    admin-password: ${EXCHANGE_SECURITY_ADMIN_PASSWORD:admin123}
 
 server:
   port: 8080

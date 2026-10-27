@@ -16,9 +16,9 @@ diffusion WebSocket du carnet d'ordres, avec un front Next.js.
 ```bash
 mvn spring-boot:run
 ```
-Par défaut : H2 en mémoire, aucun setup nécessaire. Au démarrage, un
-teneur de marché (`market-maker`) remplit le carnet de chaque symbole
-pour qu'on puisse trader tout de suite.
+Par défaut : H2 en mémoire, aucun setup nécessaire. Au premier démarrage, les
+symboles, les heures de marché et les comptes de démonstration sont créés, et
+un teneur de marché (`market-maker`) remplit le carnet de chaque symbole.
 
 Pour PostgreSQL : `mvn spring-boot:run -Dspring-boot.run.profiles=postgres`
 
@@ -28,45 +28,85 @@ cd stockxchange-front
 npm install
 npm run dev
 ```
-Puis ouvrir http://localhost:3000. Changer de trader (alice, bob, carol…)
-en haut à droite pour passer des ordres les uns contre les autres.
+Puis ouvrir http://localhost:3000.
+
+### Comptes de démonstration
+| Utilisateur | Mot de passe | Rôle |
+|---|---|---|
+| `alice`, `bob`, `carol` | `password123` | Trader |
+| `admin` | `admin123` | Administrateur |
+
+Sans connexion, on navigue en **visiteur** (consultation du marché seulement).
 
 ### Tests
 ```bash
 mvn test
 ```
+- Tests unitaires du moteur, de concurrence, des heures de marché et des chandeliers
+- `ApiIntegrationTest` : démarre toute l'application et joue les workflows du
+  cahier des charges par HTTP (visiteur, inscription, ordre, historique,
+  statistiques, droits admin, suspension, nouveau symbole, marché fermé)
 
-## Fonctionnalités
-- Ordres **LIMIT** et **MARKET**, achat et vente, sur AAPL, TSLA, MSFT, GOOGL
-- Matching **priorité prix puis temps**, exécution au prix de l'ordre déjà dans le carnet
+## Couverture du cahier des charges
+
+| Module | Fonctionnalités | Où |
+|---|---|---|
+| Auth & Utilisateurs | Inscription / connexion **JWT**, profil, rôles Trader / Admin | `AuthController`, `AuthService`, `TokenService`, `SecurityConfig` |
+| Marché | Symboles en base, prix courant, **historique de prix** (chandeliers 1m/5m/15m/1h), **heures d'ouverture** | `MarketController`, `SymbolService`, `MarketHoursService`, `ReportingService` |
+| Ordres | LIMIT / MARKET, annulation, ordres en cours et historique | `OrderController`, `TradingService` |
+| Matching Engine | Priorité prix puis temps, exécution totale ou partielle, un carnet par symbole | `engine/` |
+| Wallet & Positions | Solde disponible / bloqué, blocage des fonds (BUY) et des actions (SELL), règlement | `TradingService`, `WalletController` |
+| Notification temps réel | Carnet et trades en direct (WebSocket STOMP) | `event/MarketBroadcaster` |
+| Historique & Reporting | Historique par utilisateur (relevé + export CSV), par symbole, **statistiques** (volume, VWAP, plus haut/bas) | `HistoryController`, `ReportingService` |
+| Administration | Ajouter / suspendre un symbole, superviser / suspendre les utilisateurs, **journal d'activité global**, heures de marché | `AdminController`, `AdminService`, `ActivityLogService` |
+
+| Acteur | Droits (vérifiés par `SecurityConfig`) |
+|---|---|
+| Visiteur | `GET /api/market/**`, inscription, connexion |
+| Trader | + `/api/orders/**`, `/api/wallet/**`, `/api/history/**` |
+| Admin | `/api/admin/**` (ne passe pas d'ordres) |
+| Système | Le moteur apparie, règle et diffuse automatiquement dans `TradingService` |
+
+## Fonctionnalités du moteur
 - **Ordre MARKET protégé** : prix plafonné au pire niveau du carnet au moment
   de l'envoi, pour qu'un acheteur ne dépense jamais plus que ce qui a été bloqué
 - **Anti-auto-trade** : un utilisateur ne peut pas exécuter contre son propre ordre
-- **Réservation** des fonds (achat) ou des actions (vente) avant le matching
-- **Annulation** d'un ordre actif, avec libération exacte de la réservation
-- Compte de démo à la première connexion : 100 000 $ et 100 actions de chaque symbole
+- **Réservation** des fonds ou des actions avant le matching, libération exacte à l'annulation
 - Rechargement du carnet au redémarrage (profil PostgreSQL)
-- Diffusion **temps réel** du carnet et des transactions (WebSocket)
 
 ## API REST
 
-| Méthode | URL | Rôle |
-|---|---|---|
-| POST | `/api/orders` | Passer un ordre (en-tête `X-User-Id`) |
-| DELETE | `/api/orders/{id}` | Annuler un ordre actif |
-| GET | `/api/orders/my` | Historique de mes ordres |
-| GET | `/api/wallet` | Solde, solde bloqué, positions |
-| GET | `/api/market/symbols` | Symboles cotés, dernier prix, meilleurs prix |
-| GET | `/api/market/{symbol}/orderbook` | Carnet d'ordres agrégé par prix |
-| GET | `/api/market/{symbol}/trades` | 50 dernières transactions |
+| Méthode | URL | Accès | Rôle |
+|---|---|---|---|
+| POST | `/api/auth/register` | public | Inscription d'un trader, renvoie un jeton |
+| POST | `/api/auth/login` | public | Connexion, renvoie un jeton |
+| GET / PUT | `/api/auth/me` | connecté | Profil |
+| GET | `/api/market/status` | public | Marché ouvert ou fermé, horaires |
+| GET | `/api/market/symbols` | public | Symboles, statut, dernier prix, meilleurs prix |
+| GET | `/api/market/{symbol}/orderbook` | public | Carnet d'ordres |
+| GET | `/api/market/{symbol}/trades` | public | 50 dernières transactions |
+| GET | `/api/market/{symbol}/candles?interval=1m` | public | Historique de prix |
+| GET | `/api/market/{symbol}/stats` | public | Statistiques 24 h |
+| POST | `/api/orders` | trader | Passer un ordre |
+| DELETE | `/api/orders/{id}` | trader | Annuler un ordre actif |
+| GET | `/api/orders/my` | trader | Mes ordres |
+| GET | `/api/wallet` | trader | Solde et positions |
+| GET | `/api/history/trades` | trader | Relevé de mes exécutions |
+| GET | `/api/admin/overview` | admin | Tableau de bord |
+| GET | `/api/admin/users` | admin | Utilisateurs |
+| PATCH | `/api/admin/users/{username}/status` | admin | Suspendre / réactiver |
+| POST | `/api/admin/symbols` | admin | Ajouter un symbole |
+| PATCH | `/api/admin/symbols/{symbol}/status` | admin | Suspendre / réactiver un symbole |
+| PUT | `/api/admin/market-hours` | admin | Heures d'ouverture |
+| GET | `/api/admin/logs?actor=&action=` | admin | Journal d'activité |
 
-WebSocket (STOMP sur `/ws`) : `/topic/market/{symbol}/orderbook` et
-`/topic/market/{symbol}/trades`.
+Authentification : en-tête `Authorization: Bearer <jeton>` (jeton renvoyé par login ou register).
+WebSocket (STOMP sur `/ws`, public) : `/topic/market/{symbol}/orderbook` et `/topic/market/{symbol}/trades`.
 
 ## Notions Java 21 utilisées
 | Notion | Où |
 |---|---|
-| **Records** | Tous les DTO (`dto/`), `Trade`, `MatchResult`, `ExchangeProperties`, événements `MarketEvent` |
+| **Records** | Tous les DTO (`dto/`), `Trade`, `MatchResult`, `MarketHours` (record avec comportement), `TradeStats` (projection JPQL `select new`), `ExchangeProperties` et ses records imbriqués, événements `MarketEvent` |
 | **Record patterns** | `MarketBroadcaster.publish` (switch qui déconstruit les événements), `TradingService.validateRequest` (switch avec gardes `when`) |
 | **Sealed interface** | `MarketEvent permits OrderBookUpdated, TradeExecuted` : switch exhaustif sans `default` |
 | **Virtual threads** | `spring.threads.virtual.enabled: true` (une requête = un virtual thread) ; test de concurrence avec `newVirtualThreadPerTaskExecutor()` ; verrous `ReentrantLock` plutôt que `synchronized` |
@@ -76,12 +116,14 @@ WebSocket (STOMP sur `/ws`) : `/topic/market/{symbol}/orderbook` et
 src/main/java/com/exchange/matching/
 ├── model/        Order, Trade (record), enums — domaine pur, sans framework
 ├── engine/       OrderBook, MatchingEngine, MatchResult — cœur algorithmique
-├── service/      TradingService — orchestration métier (réservation, règlement)
-├── controller/   OrderController, MarketController, WalletController, GlobalExceptionHandler
+├── service/      TradingService (réservation, règlement), AuthService, TokenService,
+│                 SymbolService, MarketHoursService, ReportingService, AdminService, ActivityLogService
+├── reporting/    CandleAggregator, TradeStats — calculs de reporting purs
+├── controller/   Auth, Order, Market, Wallet, History, Admin + GlobalExceptionHandler
 ├── dto/          Records d'entrée/sortie de l'API
 ├── event/        MarketEvent (sealed), MarketBroadcaster (WebSocket)
 ├── persistence/  Entités JPA + repositories
-├── config/       Beans, CORS, WebSocket, chargement du carnet, teneur de marché, propriétés
+├── config/       Sécurité JWT + CORS, WebSocket, données initiales, chargement du carnet, teneur de marché, propriétés
 └── exception/    Exceptions métier
 stockxchange-front/   Interface Next.js
 ```
@@ -96,8 +138,8 @@ stockxchange-front/   Interface Next.js
   le règlement en base échouait après un match, mémoire et base
   divergeraient. En production, on utiliserait un journal d'événements
   (event sourcing / outbox pattern).
-- **Authentification** : l'utilisateur est identifié par l'en-tête
-  `X-User-Id` en attendant Spring Security + JWT. À ne pas utiliser tel quel
-  en production.
+- **Authentification** : JWT signé en HMAC-SHA256, sans session serveur.
+  Changer `exchange.security.jwt-secret` et le mot de passe admin en production
+  (variables `EXCHANGE_SECURITY_JWT_SECRET` et `EXCHANGE_SECURITY_ADMIN_PASSWORD`).
 - Prix au centime et quantités en actions entières : aucun arrondi sur les
   montants bloqués.

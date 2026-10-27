@@ -5,11 +5,11 @@ import { formatMoney, formatQty } from "@/lib/format";
 
 export function WalletPanel({
   wallet,
-  userId,
+  owner,
   prices,
 }: {
   wallet: WalletResponse | null;
-  userId: string;
+  owner: string;
   prices: MarketSummary[];
 }) {
   const priceOf = (symbol: string) => {
@@ -24,7 +24,7 @@ export function WalletPanel({
     <section className="border border-ink-700">
       <header className="flex items-center justify-between border-b border-ink-700 px-3 py-2">
         <h2 className="text-xs tracking-wide text-paper-500">Portefeuille</h2>
-        <span className="text-xs text-paper-300">{userId}</span>
+        <span className="text-xs text-paper-300">{owner}</span>
       </header>
 
       {!wallet ? (

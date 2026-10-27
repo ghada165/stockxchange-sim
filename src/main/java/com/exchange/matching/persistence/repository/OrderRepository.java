@@ -14,6 +14,10 @@ public interface OrderRepository extends JpaRepository<OrderEntity, String> {
 
     List<OrderEntity> findByUserIdOrderByCreatedAtDesc(String userId);
 
+    long countByUserIdAndStatusIn(String userId, List<OrderStatus> statuses);
+
+    long countByStatusIn(List<OrderStatus> statuses);
+
     /** Utilise au demarrage pour recharger tous les ordres actifs dans le MatchingEngine en memoire. */
     List<OrderEntity> findByStatusInOrderBySequenceAsc(List<OrderStatus> statuses);
 
