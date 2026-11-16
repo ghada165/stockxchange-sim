@@ -8,7 +8,8 @@ diffusion WebSocket du carnet d'ordres, avec un front Next.js.
 - **Backend** : Java 21, Spring Boot 3.3 (Web, Data JPA, Validation, WebSocket STOMP)
 - **Base** : H2 en mémoire par défaut, PostgreSQL en option ; schéma géré par Flyway
 - **Front** : Next.js 16, React 19, Tailwind CSS 4, STOMP sur SockJS
-- **Tests** : JUnit 5 + AssertJ (tests unitaires et de concurrence du moteur)
+- **Tests** : JUnit 5, Mockito, MockMvc, AssertJ (168 tests : controllers, services, moteur, intégration)
+- **Documentation API** : Swagger UI / OpenAPI 3 (springdoc-openapi)
 
 ## Lancer le projet
 
@@ -38,14 +39,28 @@ Puis ouvrir http://localhost:3000.
 
 Sans connexion, on navigue en **visiteur** (consultation du marché seulement).
 
+### Documentation de l'API (Swagger)
+Backend lancé, ouvrir **http://localhost:8080/swagger-ui.html** (description JSON :
+`/v3/api-docs`). Tous les endpoints y sont documentés et testables.
+
+Pour un endpoint protégé : exécuter `POST /api/auth/login` (par exemple
+`{"username":"admin","password":"admin123"}`), copier le `token` de la réponse,
+cliquer sur **Authorize** et le coller.
+
 ### Tests
 ```bash
 mvn test
 ```
-- Tests unitaires du moteur, de concurrence, des heures de marché et des chandeliers
-- `ApiIntegrationTest` : démarre toute l'application et joue les workflows du
-  cahier des charges par HTTP (visiteur, inscription, ordre, historique,
-  statistiques, droits admin, suspension, nouveau symbole, marché fermé)
+168 tests, dont des tests unitaires pour **tous les controllers et tous les services** :
+
+| Classe testée | Fichier de test | Technique |
+|---|---|---|
+| 7 controllers (`Auth`, `Order`, `Market`, `Wallet`, `History`, `Admin`, `SymbolAdmin`) | `controller/*ControllerTest` | `@WebMvcTest` + `MockMvc`, services en `@MockBean` : statut HTTP, corps JSON, validation, erreurs 400/401/403/404/409/422 |
+| 9 services (`Trading`, `SymbolAdmin`, `Auth`, `Admin`, `Reporting`, `MarketHours`, `Symbol`, `Token`, `ActivityLog`) | `service/*ServiceTest` | JUnit 5 + Mockito (`@Mock`, `ArgumentCaptor`, `InOrder`) ; `TradingServiceTest` utilise le vrai moteur et vérifie les soldes après règlement |
+| Moteur, heures de marché, chandeliers | `engine/`, `model/`, `reporting/` | Tests unitaires et de concurrence |
+| Application complète | `ApiIntegrationTest` | Workflows du cahier des charges par HTTP, dont le CRUD complet d'un symbole |
+
+Le CRUD de référence pour le TP 5 est `SymbolAdminController` / `SymbolAdminService`.
 
 ## Couverture du cahier des charges
 
@@ -58,7 +73,7 @@ mvn test
 | Wallet & Positions | Solde disponible / bloqué, blocage des fonds (BUY) et des actions (SELL), règlement | `TradingService`, `WalletController` |
 | Notification temps réel | Carnet et trades en direct (WebSocket STOMP) | `event/MarketBroadcaster` |
 | Historique & Reporting | Historique par utilisateur (relevé + export CSV), par symbole, **statistiques** (volume, VWAP, plus haut/bas) | `HistoryController`, `ReportingService` |
-| Administration | Ajouter / suspendre un symbole, superviser / suspendre les utilisateurs, **journal d'activité global**, heures de marché | `AdminController`, `AdminService`, `ActivityLogService` |
+| Administration | **CRUD des symboles** (ajouter, consulter, modifier, suspendre, supprimer), superviser / suspendre les utilisateurs, **journal d'activité global**, heures de marché | `SymbolAdminController`, `SymbolAdminService`, `AdminController`, `AdminService`, `ActivityLogService` |
 
 | Acteur | Droits (vérifiés par `SecurityConfig`) |
 |---|---|
@@ -95,8 +110,12 @@ mvn test
 | GET | `/api/admin/overview` | admin | Tableau de bord |
 | GET | `/api/admin/users` | admin | Utilisateurs |
 | PATCH | `/api/admin/users/{username}/status` | admin | Suspendre / réactiver |
-| POST | `/api/admin/symbols` | admin | Ajouter un symbole |
+| POST | `/api/admin/symbols` | admin | Ajouter un symbole (201) |
+| GET | `/api/admin/symbols` | admin | Lister les symboles |
+| GET | `/api/admin/symbols/{symbol}` | admin | Détail d'un symbole (404 si inconnu) |
+| PUT | `/api/admin/symbols/{symbol}` | admin | Modifier le nom et le prix de référence |
 | PATCH | `/api/admin/symbols/{symbol}/status` | admin | Suspendre / réactiver un symbole |
+| DELETE | `/api/admin/symbols/{symbol}` | admin | Supprimer un symbole (204 ; 409 si des traders ont déjà passé des ordres dessus) |
 | PUT | `/api/admin/market-hours` | admin | Heures d'ouverture |
 | GET | `/api/admin/logs?actor=&action=` | admin | Journal d'activité |
 
@@ -117,13 +136,13 @@ src/main/java/com/exchange/matching/
 ├── model/        Order, Trade (record), enums — domaine pur, sans framework
 ├── engine/       OrderBook, MatchingEngine, MatchResult — cœur algorithmique
 ├── service/      TradingService (réservation, règlement), AuthService, TokenService,
-│                 SymbolService, MarketHoursService, ReportingService, AdminService, ActivityLogService
+│                 SymbolService, SymbolAdminService, MarketHoursService, ReportingService, AdminService, ActivityLogService
 ├── reporting/    CandleAggregator, TradeStats — calculs de reporting purs
-├── controller/   Auth, Order, Market, Wallet, History, Admin + GlobalExceptionHandler
+├── controller/   Auth, Order, Market, Wallet, History, Admin, SymbolAdmin + GlobalExceptionHandler
 ├── dto/          Records d'entrée/sortie de l'API
 ├── event/        MarketEvent (sealed), MarketBroadcaster (WebSocket)
 ├── persistence/  Entités JPA + repositories
-├── config/       Sécurité JWT + CORS, WebSocket, données initiales, chargement du carnet, teneur de marché, propriétés
+├── config/       Sécurité JWT + CORS, Swagger (OpenApiConfig), WebSocket, données initiales, chargement du carnet, teneur de marché, propriétés
 └── exception/    Exceptions métier
 stockxchange-front/   Interface Next.js
 ```

@@ -54,6 +54,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/market/**").permitAll()
                 .requestMatchers("/ws/**", "/error").permitAll()
+                // Documentation Swagger / OpenAPI: consultable sans jeton
+                .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/orders/**", "/api/wallet/**", "/api/history/**").hasRole("TRADER")
                 .anyRequest().authenticated())

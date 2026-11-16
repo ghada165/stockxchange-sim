@@ -133,6 +133,51 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void admin_crud_complet_sur_un_symbole() throws Exception {
+        String admin = "Bearer " + login("admin", "admin123");
+
+        // Create
+        mvc.perform(post("/api/admin/symbols").header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"symbol\":\"AMZN\",\"name\":\"Amazon\",\"referencePrice\":180.00}"))
+            .andExpect(status().isCreated());
+
+        // Read
+        mvc.perform(get("/api/admin/symbols/AMZN").header("Authorization", admin))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("Amazon"));
+
+        // Update
+        mvc.perform(put("/api/admin/symbols/AMZN").header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Amazon.com Inc.\",\"referencePrice\":185.50}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("Amazon.com Inc."))
+            .andExpect(jsonPath("$.referencePrice").value(185.50));
+
+        // Delete: seul le teneur de marche a des ordres dessus, la suppression est acceptee
+        mvc.perform(delete("/api/admin/symbols/AMZN").header("Authorization", admin))
+            .andExpect(status().isNoContent());
+        mvc.perform(get("/api/admin/symbols/AMZN").header("Authorization", admin))
+            .andExpect(status().isNotFound());
+
+        // Un symbole sur lequel un trader a passe un ordre ne peut pas etre supprime
+        String trader = "Bearer " + login("alice", "password123");
+        mvc.perform(post("/api/orders").header("Authorization", trader)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"symbol\":\"MSFT\",\"side\":\"BUY\",\"type\":\"LIMIT\",\"price\":100.00,\"quantity\":1}"))
+            .andExpect(status().isCreated());
+        mvc.perform(delete("/api/admin/symbols/MSFT").header("Authorization", admin))
+            .andExpect(status().isConflict());
+        mvc.perform(get("/api/market/symbols"))
+            .andExpect(jsonPath("$[?(@.symbol == 'MSFT')].status").value(org.hamcrest.Matchers.hasItem("ACTIVE")));
+
+        // Un trader n'a pas acces au CRUD
+        mvc.perform(get("/api/admin/symbols").header("Authorization", trader))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void marche_ferme_refuse_les_ordres() throws Exception {
         String admin = login("admin", "admin123");
         DayOfWeek today = ZonedDateTime.now(ZoneId.of("Europe/Paris")).getDayOfWeek();

@@ -6,6 +6,7 @@ import com.exchange.matching.exception.ForbiddenOperationException;
 import com.exchange.matching.exception.InsufficientFundsException;
 import com.exchange.matching.exception.MarketClosedException;
 import com.exchange.matching.exception.OrderNotFoundException;
+import com.exchange.matching.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -88,8 +89,8 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
     }
 
-    @ExceptionHandler(OrderNotFoundException.class)
-    public ResponseEntity<ApiError> handleOrderNotFound(OrderNotFoundException ex) {
+    @ExceptionHandler({OrderNotFoundException.class, ResourceNotFoundException.class})
+    public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 

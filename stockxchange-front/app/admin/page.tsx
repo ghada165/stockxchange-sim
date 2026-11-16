@@ -26,6 +26,8 @@ const ACTIONS = [
   "ORDER_REJECTED",
   "SYMBOL_CREATED",
   "SYMBOL_STATUS_CHANGED",
+  "SYMBOL_UPDATED",
+  "SYMBOL_DELETED",
   "USER_STATUS_CHANGED",
   "MARKET_HOURS_UPDATED",
 ];
@@ -110,6 +112,8 @@ function AdminDashboard() {
               `${s.symbol} ${next === "ACTIVE" ? "réactivé" : "suspendu"}`,
             );
           }}
+          onUpdate={(symbol, payload) => run(() => api.admin.updateSymbol(symbol, payload), `${symbol} modifié`)}
+          onDelete={(symbol) => run(() => api.admin.deleteSymbol(symbol), `${symbol} retiré de la cote`)}
         />
         {status && (
           <MarketHoursSection
@@ -176,14 +180,28 @@ function SymbolsSection({
   symbols,
   onCreate,
   onToggle,
+  onUpdate,
+  onDelete,
 }: {
   symbols: MarketSummary[];
   onCreate: (payload: { symbol: string; name: string; referencePrice: number }) => Promise<void>;
   onToggle: (symbol: MarketSummary) => Promise<void>;
+  onUpdate: (symbol: string, payload: { name: string; referencePrice: number }) => Promise<void>;
+  onDelete: (symbol: string) => Promise<void>;
 }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  // Ligne en cours de modification, et symbole dont la suppression attend une confirmation
+  const [editing, setEditing] = useState<{ symbol: string; name: string; price: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    await onUpdate(editing.symbol, { name: editing.name.trim(), referencePrice: Number(editing.price) });
+    setEditing(null);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -211,20 +229,92 @@ function SymbolsSection({
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-700">
-            {symbols.map((s) => (
-              <tr key={s.symbol}>
-                <td className="px-3 py-1.5 text-paper-100">{s.symbol}</td>
-                <td className="px-3 py-1.5 text-paper-300">{s.name}</td>
-                <td className="num px-3 py-1.5 text-right text-paper-300">{formatPrice(s.referencePrice)}</td>
-                <td className="num px-3 py-1.5 text-right text-paper-100">{formatPrice(s.lastPrice)}</td>
-                <td className={`px-3 py-1.5 text-xs ${s.status === "ACTIVE" ? "text-bid-400" : "text-ask-400"}`}>
-                  {s.status === "ACTIVE" ? "Actif" : "Suspendu"}
-                </td>
-                <td className="px-3 py-1.5 text-right">
-                  <ToggleButton active={s.status === "ACTIVE"} onClick={() => onToggle(s)} />
-                </td>
-              </tr>
-            ))}
+            {symbols.map((s) =>
+              editing?.symbol === s.symbol ? (
+                <tr key={s.symbol} className="bg-ink-800/40">
+                  <td className="px-3 py-1.5 text-paper-100">{s.symbol}</td>
+                  <td className="px-3 py-1.5" colSpan={5}>
+                    <form onSubmit={saveEdit} className="flex flex-wrap items-center gap-2">
+                      <input
+                        required
+                        aria-label={`Nouveau nom de ${s.symbol}`}
+                        value={editing.name}
+                        onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                        maxLength={100}
+                        className={`${input} min-w-0 flex-1`}
+                      />
+                      <input
+                        required
+                        aria-label={`Nouveau prix de référence de ${s.symbol}`}
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={editing.price}
+                        onChange={(e) => setEditing({ ...editing, price: e.target.value })}
+                        className={`${input} num w-28`}
+                      />
+                      <button type="submit" className="bg-gold-500 px-2 py-1 text-xs font-medium text-ink-950 hover:opacity-90">
+                        Enregistrer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditing(null)}
+                        className="border border-ink-600 px-2 py-1 text-xs text-paper-300 hover:border-ink-500"
+                      >
+                        Annuler
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={s.symbol}>
+                  <td className="px-3 py-1.5 text-paper-100">{s.symbol}</td>
+                  <td className="px-3 py-1.5 text-paper-300">{s.name}</td>
+                  <td className="num px-3 py-1.5 text-right text-paper-300">{formatPrice(s.referencePrice)}</td>
+                  <td className="num px-3 py-1.5 text-right text-paper-100">{formatPrice(s.lastPrice)}</td>
+                  <td className={`px-3 py-1.5 text-xs ${s.status === "ACTIVE" ? "text-bid-400" : "text-ask-400"}`}>
+                    {s.status === "ACTIVE" ? "Actif" : "Suspendu"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                    <div className="inline-flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDelete(null);
+                          setEditing({ symbol: s.symbol, name: s.name, price: String(s.referencePrice) });
+                        }}
+                        className="border border-ink-600 px-2 py-0.5 text-xs text-paper-300 hover:border-gold-500 hover:text-gold-400"
+                      >
+                        Modifier
+                      </button>
+                      <ToggleButton active={s.status === "ACTIVE"} onClick={() => onToggle(s)} />
+                      {confirmDelete === s.symbol ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setConfirmDelete(null);
+                            await onDelete(s.symbol);
+                          }}
+                          onBlur={() => setConfirmDelete(null)}
+                          className="border border-ask-500 px-2 py-0.5 text-xs text-ask-400"
+                        >
+                          Confirmer ?
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelete(s.symbol)}
+                          title="Possible seulement si aucun trader n'a encore passé d'ordre sur ce symbole"
+                          className="border border-ink-600 px-2 py-0.5 text-xs text-paper-300 hover:border-ask-500 hover:text-ask-400"
+                        >
+                          Supprimer
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       </div>

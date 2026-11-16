@@ -252,6 +252,11 @@ export const api = {
       request<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}/status`, json("PATCH", { status })),
     createSymbol: (payload: { symbol: string; name: string; referencePrice: number }) =>
       request<MarketSummary>("/api/admin/symbols", json("POST", payload)),
+    symbol: (symbol: string) => request<MarketSummary>(`/api/admin/symbols/${encodeURIComponent(symbol)}`),
+    updateSymbol: (symbol: string, payload: { name: string; referencePrice: number }) =>
+      request<MarketSummary>(`/api/admin/symbols/${encodeURIComponent(symbol)}`, json("PUT", payload)),
+    deleteSymbol: (symbol: string) =>
+      request<void>(`/api/admin/symbols/${encodeURIComponent(symbol)}`, json("DELETE")),
     setSymbolStatus: (symbol: string, status: AccountStatus) =>
       request<MarketSummary>(`/api/admin/symbols/${encodeURIComponent(symbol)}/status`, json("PATCH", { status })),
     updateMarketHours: (payload: {

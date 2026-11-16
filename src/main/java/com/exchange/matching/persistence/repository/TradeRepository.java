@@ -13,6 +13,9 @@ public interface TradeRepository extends JpaRepository<TradeEntity, String> {
 
     List<TradeEntity> findTop50BySymbolOrderByExecutedAtDesc(String symbol);
 
+    /** Un symbole deja echange ne peut plus etre supprime (l'historique doit rester coherent). */
+    boolean existsBySymbol(String symbol);
+
     Optional<TradeEntity> findTopBySymbolOrderByExecutedAtDesc(String symbol);
 
     /** Premier trade de la periode: prix d'ouverture des statistiques. */

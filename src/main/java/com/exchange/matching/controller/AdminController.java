@@ -1,28 +1,37 @@
 package com.exchange.matching.controller;
 
+import com.exchange.matching.config.OpenApiConfig;
 import com.exchange.matching.dto.ActivityLogResponse;
 import com.exchange.matching.dto.AdminOverviewResponse;
 import com.exchange.matching.dto.AdminUserResponse;
-import com.exchange.matching.dto.CreateSymbolRequest;
 import com.exchange.matching.dto.MarketHoursRequest;
 import com.exchange.matching.dto.MarketStatusResponse;
-import com.exchange.matching.dto.MarketSummaryResponse;
 import com.exchange.matching.dto.StatusUpdateRequest;
 import com.exchange.matching.model.ActivityType;
 import com.exchange.matching.service.ActivityLogService;
 import com.exchange.matching.service.AdminService;
 import com.exchange.matching.service.MarketHoursService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/** Module Administration (role ADMIN uniquement, voir SecurityConfig). */
+/**
+ * Module Administration (role ADMIN uniquement, voir SecurityConfig):
+ * tableau de bord, utilisateurs, heures de marche, journal d'activite.
+ * Le CRUD des symboles est dans {@link SymbolAdminController}.
+ */
 @RestController
 @RequestMapping("/api/admin")
+@Tag(name = "Admin", description = "Tableau de bord, utilisateurs, heures de marche, journal (role ADMIN)")
+@SecurityRequirement(name = OpenApiConfig.BEARER)
 public class AdminController {
 
     private final AdminService adminService;
@@ -35,49 +44,48 @@ public class AdminController {
         this.activityLog = activityLog;
     }
 
-    /** GET /api/admin/overview : chiffres cles de la plateforme. */
     @GetMapping("/overview")
+    @Operation(summary = "Tableau de bord", description = "Utilisateurs, symboles, ordres actifs, volume 24 h, etat du marche.")
     public AdminOverviewResponse overview() {
         return adminService.overview();
     }
 
-    /** GET /api/admin/users : supervision des utilisateurs. */
     @GetMapping("/users")
+    @Operation(summary = "Lister les utilisateurs", description = "Avec solde et nombre d'ordres actifs.")
     public List<AdminUserResponse> users() {
         return adminService.users();
     }
 
-    /** PATCH /api/admin/users/{username}/status : activer ou suspendre un utilisateur. */
     @PatchMapping("/users/{username}/status")
-    public AdminUserResponse setUserStatus(Authentication authentication, @PathVariable String username,
+    @Operation(summary = "Suspendre ou reactiver un utilisateur")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Statut modifie"),
+        @ApiResponse(responseCode = "403", description = "Un admin ne peut pas modifier son propre statut"),
+        @ApiResponse(responseCode = "404", description = "Utilisateur inconnu")
+    })
+    public AdminUserResponse setUserStatus(Authentication authentication,
+                                           @Parameter(description = "Nom d'utilisateur", example = "alice")
+                                           @PathVariable String username,
                                            @Valid @RequestBody StatusUpdateRequest request) {
         return adminService.setUserStatus(authentication.getName(), username, request.status());
     }
 
-    /** POST /api/admin/symbols : ajouter un symbole (introduction en bourse). */
-    @PostMapping("/symbols")
-    public ResponseEntity<MarketSummaryResponse> createSymbol(Authentication authentication,
-                                                              @Valid @RequestBody CreateSymbolRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.createSymbol(authentication.getName(), request));
-    }
-
-    /** PATCH /api/admin/symbols/{symbol}/status : suspendre ou reactiver la cotation d'un symbole. */
-    @PatchMapping("/symbols/{symbol}/status")
-    public MarketSummaryResponse setSymbolStatus(Authentication authentication, @PathVariable String symbol,
-                                                 @Valid @RequestBody StatusUpdateRequest request) {
-        return adminService.setSymbolStatus(authentication.getName(), symbol, request.status());
-    }
-
-    /** PUT /api/admin/market-hours : definir les heures d'ouverture du marche. */
     @PutMapping("/market-hours")
+    @Operation(summary = "Definir les heures d'ouverture du marche")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Horaires enregistres"),
+        @ApiResponse(responseCode = "400", description = "Horaires ou fuseau invalides")
+    })
     public MarketStatusResponse updateMarketHours(Authentication authentication,
                                                   @Valid @RequestBody MarketHoursRequest request) {
         return marketHours.update(request, authentication.getName());
     }
 
-    /** GET /api/admin/logs?actor=alice&action=ORDER_PLACED : journal d'activite global (200 dernieres lignes). */
     @GetMapping("/logs")
-    public List<ActivityLogResponse> logs(@RequestParam(required = false) String actor,
+    @Operation(summary = "Journal d'activite global", description = "200 dernieres lignes, filtrables par acteur ou par action.")
+    public List<ActivityLogResponse> logs(@Parameter(description = "Filtrer par utilisateur", example = "alice")
+                                          @RequestParam(required = false) String actor,
+                                          @Parameter(description = "Filtrer par type d'action")
                                           @RequestParam(required = false) ActivityType action) {
         return activityLog.recent(actor, action);
     }

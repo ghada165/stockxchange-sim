@@ -69,6 +69,14 @@ exchange:
     token-validity: 8h
     admin-password: ${EXCHANGE_SECURITY_ADMIN_PASSWORD:admin123}
 
+# Documentation Swagger: http://localhost:8080/swagger-ui.html
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
+    persist-authorization: true   # garde le jeton "Authorize" apres un rafraichissement
+
 server:
   port: 8080
 

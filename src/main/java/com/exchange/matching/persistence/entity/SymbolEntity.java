@@ -44,7 +44,9 @@ public class SymbolEntity {
 
     public String getSymbol() { return symbol; }
     public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
     public BigDecimal getReferencePrice() { return referencePrice; }
+    public void setReferencePrice(BigDecimal referencePrice) { this.referencePrice = referencePrice; }
     public AccountStatus getStatus() { return status; }
     public void setStatus(AccountStatus status) { this.status = status; }
     public Instant getCreatedAt() { return createdAt; }

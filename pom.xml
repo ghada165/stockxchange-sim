@@ -89,6 +89,13 @@
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
+        <!-- Documentation de l'API: Swagger UI (/swagger-ui.html) et OpenAPI (/v3/api-docs) -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.6.0</version>
+        </dependency>
+
         <!-- Migrations de schema versionnees -->
         <dependency>
             <groupId>org.flywaydb</groupId>
