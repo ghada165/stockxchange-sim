@@ -4,6 +4,7 @@ import com.exchange.matching.config.ExchangeProperties;
 import com.exchange.matching.dto.AuthResponse;
 import com.exchange.matching.dto.UserProfileResponse;
 import com.exchange.matching.persistence.entity.UserEntity;
+import com.exchange.matching.security.TokenRevocationValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -13,13 +14,17 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Emet les jetons JWT. Contenu du jeton:
+ *   jti   = identifiant unique du jeton (sert a le revoquer a la deconnexion)
  *   sub   = nom d'utilisateur (identifiant utilise partout dans l'API)
  *   roles = [TRADER] ou [ADMIN]
  *   exp   = date d'expiration
- * Signe en HMAC-SHA256 avec la cle de exchange.security.jwt-secret.
+ *   ver   = version des jetons du compte (sert a invalider tous ses jetons d'un coup)
+ * Signe en HMAC-SHA256 avec la cle de exchange.security.jwt-secret. Signe ne veut pas dire
+ * chiffre: le contenu d'un JWT est lisible par tous, il ne contient donc aucun secret.
  */
 @Service
 public class TokenService {
@@ -38,11 +43,13 @@ public class TokenService {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(properties.security().tokenValidity());
         JwtClaimsSet claims = JwtClaimsSet.builder()
+            .id(UUID.randomUUID().toString())
             .issuer(ISSUER)
             .issuedAt(now)
             .expiresAt(expiresAt)
             .subject(user.getUsername())
             .claim("roles", List.of(user.getRole().name()))
+            .claim(TokenRevocationValidator.TOKEN_VERSION_CLAIM, user.getTokenVersion())
             .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         String token = jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

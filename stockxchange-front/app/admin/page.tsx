@@ -14,6 +14,7 @@ import {
   MarketSummary,
 } from "@/lib/api";
 import { DAY_LABELS, formatClock, formatDateTime, formatMoney, formatPrice, formatQty } from "@/lib/format";
+import { useSession } from "@/lib/session";
 
 const ALL_DAYS: DayOfWeek[] = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
 const ACTIONS = [
@@ -26,7 +27,11 @@ const ACTIONS = [
   "ORDER_REJECTED",
   "SYMBOL_CREATED",
   "SYMBOL_STATUS_CHANGED",
+  "ACCOUNT_LOCKED",
+  "LOGOUT",
+  "PASSWORD_CHANGED",
   "USER_STATUS_CHANGED",
+  "USER_ROLE_CHANGED",
   "MARKET_HOURS_UPDATED",
 ];
 
@@ -122,6 +127,10 @@ function AdminDashboard() {
 
       <UsersSection
         users={users}
+        onRoleChange={(u, role) =>
+          run(() => api.admin.setUserRole(u.username, role), `${u.username} est maintenant ${role === "ADMIN" ? "administrateur" : "trader"}`)
+        }
+        onUnlock={(u) => run(() => api.admin.unlockUser(u.username), `${u.username} déverrouillé`)}
         onToggle={(u) => {
           const next: AccountStatus = u.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
           return run(
@@ -353,7 +362,19 @@ function MarketHoursSection({
   );
 }
 
-function UsersSection({ users, onToggle }: { users: AdminUser[]; onToggle: (user: AdminUser) => Promise<void> }) {
+function UsersSection({
+  users,
+  onToggle,
+  onRoleChange,
+  onUnlock,
+}: {
+  users: AdminUser[];
+  onToggle: (user: AdminUser) => Promise<void>;
+  onRoleChange: (user: AdminUser, role: "TRADER" | "ADMIN") => Promise<void>;
+  onUnlock: (user: AdminUser) => Promise<void>;
+}) {
+  const session = useSession();
+  const me = session?.user.username;
   return (
     <section className="border border-ink-700">
       <header className="border-b border-ink-700 px-3 py-2">
@@ -378,7 +399,21 @@ function UsersSection({ users, onToggle }: { users: AdminUser[]; onToggle: (user
               <tr key={u.username}>
                 <td className="px-3 py-1.5 text-paper-100">{u.username}</td>
                 <td className="px-3 py-1.5 text-paper-300">{u.displayName ?? "—"}</td>
-                <td className="px-3 py-1.5 text-paper-500">{u.role === "ADMIN" ? "Admin" : "Trader"}</td>
+                <td className="px-3 py-1.5">
+                  {u.username === me ? (
+                    <span className="text-paper-500">Admin (vous)</span>
+                  ) : (
+                    <select
+                      aria-label={`Rôle de ${u.username}`}
+                      value={u.role}
+                      onChange={(e) => onRoleChange(u, e.target.value as "TRADER" | "ADMIN")}
+                      className="border border-ink-600 bg-ink-800 px-1 py-0.5 text-xs text-paper-300"
+                    >
+                      <option value="TRADER">Trader</option>
+                      <option value="ADMIN">Admin</option>
+                    </select>
+                  )}
+                </td>
                 <td className="num px-3 py-1.5 text-xs text-paper-500">{formatDateTime(u.createdAt)}</td>
                 <td className="num px-3 py-1.5 text-right text-paper-300">
                   {u.cashBalance === null ? "—" : formatMoney(u.cashBalance)}
@@ -386,9 +421,23 @@ function UsersSection({ users, onToggle }: { users: AdminUser[]; onToggle: (user
                 <td className="num px-3 py-1.5 text-right text-paper-300">{u.activeOrders}</td>
                 <td className={`px-3 py-1.5 text-xs ${u.status === "ACTIVE" ? "text-bid-400" : "text-ask-400"}`}>
                   {u.status === "ACTIVE" ? "Actif" : "Suspendu"}
+                  {u.lockedUntil && (
+                    <span className="ml-1 text-gold-400" title={`Verrouillé jusqu'à ${formatDateTime(u.lockedUntil)}`}>
+                      · verrouillé
+                    </span>
+                  )}
                 </td>
-                <td className="px-3 py-1.5 text-right">
-                  {u.role === "TRADER" && <ToggleButton active={u.status === "ACTIVE"} onClick={() => onToggle(u)} />}
+                <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                  {u.lockedUntil && (
+                    <button
+                      type="button"
+                      onClick={() => onUnlock(u)}
+                      className="mr-1 border border-ink-600 px-2 py-0.5 text-xs text-paper-300 hover:border-gold-500"
+                    >
+                      Déverrouiller
+                    </button>
+                  )}
+                  {u.username !== me && <ToggleButton active={u.status === "ACTIVE"} onClick={() => onToggle(u)} />}
                 </td>
               </tr>
             ))}

@@ -36,6 +36,17 @@ public class UserEntity {
     @Column(nullable = false)
     private Instant createdAt;
 
+    /** Echecs de connexion consecutifs (remis a zero a la premiere connexion reussie). */
+    @Column(nullable = false)
+    private int failedLoginAttempts;
+
+    /** Compte verrouille jusqu'a cette date apres trop d'echecs (null = pas verrouille). */
+    private Instant lockedUntil;
+
+    /** Version des jetons: un JWT dont la claim "ver" differe est refuse. */
+    @Column(nullable = false)
+    private int tokenVersion;
+
     protected UserEntity() {
     }
 
@@ -54,6 +65,45 @@ public class UserEntity {
         return status == AccountStatus.ACTIVE;
     }
 
+    public boolean isLocked(Instant now) {
+        return lockedUntil != null && lockedUntil.isAfter(now);
+    }
+
+    /**
+     * Enregistre un echec de connexion. Au-dela de {@code maxAttempts} echecs
+     * consecutifs, le compte est verrouille pendant {@code lockDuration}.
+     *
+     * @return true si cet echec vient de declencher le verrouillage
+     */
+    public boolean registerFailedLogin(int maxAttempts, java.time.Duration lockDuration, Instant now) {
+        failedLoginAttempts++;
+        if (failedLoginAttempts >= maxAttempts) {
+            failedLoginAttempts = 0;
+            lockedUntil = now.plus(lockDuration);
+            return true;
+        }
+        return false;
+    }
+
+    public void registerSuccessfulLogin() {
+        failedLoginAttempts = 0;
+        lockedUntil = null;
+    }
+
+    /**
+     * Invalide tous les jetons deja emis pour ce compte: ils portent l'ancienne
+     * version. (Une comparaison de dates ne suffirait pas: la date d'emission
+     * d'un JWT n'est precise qu'a la seconde.)
+     */
+    public void revokeAllTokens() {
+        tokenVersion++;
+    }
+
+    public void changePassword(String newPasswordHash) {
+        this.passwordHash = newPasswordHash;
+        revokeAllTokens();
+    }
+
     public String getId() { return id; }
     public String getUsername() { return username; }
     public String getPasswordHash() { return passwordHash; }
@@ -62,7 +112,11 @@ public class UserEntity {
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
     public Role getRole() { return role; }
+    public void setRole(Role role) { this.role = role; }
     public AccountStatus getStatus() { return status; }
     public void setStatus(AccountStatus status) { this.status = status; }
     public Instant getCreatedAt() { return createdAt; }
+    public int getFailedLoginAttempts() { return failedLoginAttempts; }
+    public Instant getLockedUntil() { return lockedUntil; }
+    public int getTokenVersion() { return tokenVersion; }
 }

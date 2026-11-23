@@ -7,6 +7,7 @@ import com.exchange.matching.dto.CreateSymbolRequest;
 import com.exchange.matching.dto.MarketHoursRequest;
 import com.exchange.matching.dto.MarketStatusResponse;
 import com.exchange.matching.dto.MarketSummaryResponse;
+import com.exchange.matching.dto.RoleUpdateRequest;
 import com.exchange.matching.dto.StatusUpdateRequest;
 import com.exchange.matching.model.ActivityType;
 import com.exchange.matching.service.ActivityLogService;
@@ -15,6 +16,7 @@ import com.exchange.matching.service.MarketHoursService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +24,7 @@ import java.util.List;
 
 /** Module Administration (role ADMIN uniquement, voir SecurityConfig). */
 @RestController
+@PreAuthorize("hasRole('ADMIN')") // double la regle d'URL de SecurityConfig (defense en profondeur)
 @RequestMapping("/api/admin")
 public class AdminController {
 
@@ -52,6 +55,19 @@ public class AdminController {
     public AdminUserResponse setUserStatus(Authentication authentication, @PathVariable String username,
                                            @Valid @RequestBody StatusUpdateRequest request) {
         return adminService.setUserStatus(authentication.getName(), username, request.status());
+    }
+
+    /** PATCH /api/admin/users/{username}/role : attribuer le role TRADER ou ADMIN. */
+    @PatchMapping("/users/{username}/role")
+    public AdminUserResponse setUserRole(Authentication authentication, @PathVariable String username,
+                                         @Valid @RequestBody RoleUpdateRequest request) {
+        return adminService.setUserRole(authentication.getName(), username, request.role());
+    }
+
+    /** POST /api/admin/users/{username}/unlock : lever un verrouillage apres echecs de connexion. */
+    @PostMapping("/users/{username}/unlock")
+    public AdminUserResponse unlockUser(Authentication authentication, @PathVariable String username) {
+        return adminService.unlockUser(authentication.getName(), username);
     }
 
     /** POST /api/admin/symbols : ajouter un symbole (introduction en bourse). */

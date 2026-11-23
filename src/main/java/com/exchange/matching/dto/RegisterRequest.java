@@ -15,6 +15,7 @@ public record RegisterRequest(
 
     @NotBlank(message = "password est requis")
     @Size(min = 8, max = 72, message = "password doit faire entre 8 et 72 caracteres")
+    @Pattern(regexp = PasswordPolicy.REGEX, message = PasswordPolicy.MESSAGE)
     String password,
 
     @Size(max = 100, message = "displayName: 100 caracteres maximum")

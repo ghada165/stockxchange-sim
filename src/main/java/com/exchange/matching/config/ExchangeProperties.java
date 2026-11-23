@@ -40,7 +40,7 @@ public record ExchangeProperties(
         if (startingShares == null) startingShares = new BigDecimal("100");
         symbols = symbols == null ? List.of() : List.copyOf(symbols);
         if (marketHours == null) marketHours = new MarketHoursSettings(null, null, null, null, false);
-        if (security == null) security = new Security(null, null, null);
+        if (security == null) security = new Security(null, null, null, null, null);
     }
 
     /** Symbole cote au premier demarrage. */
@@ -67,8 +67,11 @@ public record ExchangeProperties(
      * @param jwtSecret     cle HMAC de signature des jetons (32 caracteres minimum)
      * @param tokenValidity duree de validite d'un jeton
      * @param adminPassword mot de passe du compte "admin" cree au premier demarrage
+     * @param maxFailedLogins echecs de connexion consecutifs avant verrouillage temporaire
+     * @param lockDuration  duree du verrouillage
      */
-    public record Security(String jwtSecret, Duration tokenValidity, String adminPassword) {
+    public record Security(String jwtSecret, Duration tokenValidity, String adminPassword,
+                           Integer maxFailedLogins, Duration lockDuration) {
 
         public Security {
             if (jwtSecret == null) jwtSecret = "dev-only-secret-change-me-in-production-0123456789";
@@ -77,6 +80,8 @@ public record ExchangeProperties(
             }
             if (tokenValidity == null) tokenValidity = Duration.ofHours(8);
             if (adminPassword == null) adminPassword = "admin123";
+            if (maxFailedLogins == null || maxFailedLogins < 1) maxFailedLogins = 5;
+            if (lockDuration == null) lockDuration = Duration.ofMinutes(15);
         }
     }
 }

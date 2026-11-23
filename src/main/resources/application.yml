@@ -67,6 +67,8 @@ exchange:
     # variable d'environnement EXCHANGE_SECURITY_JWT_SECRET
     jwt-secret: ${EXCHANGE_SECURITY_JWT_SECRET:stockxchange-sim-dev-secret-change-me-0123456789}
     token-validity: 8h
+    max-failed-logins: 5       # echecs consecutifs avant verrouillage temporaire du compte
+    lock-duration: 15m
     admin-password: ${EXCHANGE_SECURITY_ADMIN_PASSWORD:admin123}
 
 server:

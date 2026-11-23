@@ -7,6 +7,7 @@ import com.exchange.matching.service.TradingService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,6 +18,7 @@ import java.util.List;
  * (authentication.getName() = claim "sub"): impossible d'agir au nom d'un autre.
  */
 @RestController
+@PreAuthorize("hasRole('TRADER')") // double la regle d'URL de SecurityConfig (defense en profondeur)
 @RequestMapping("/api/orders")
 public class OrderController {
 

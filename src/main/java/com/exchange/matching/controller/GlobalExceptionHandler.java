@@ -1,6 +1,7 @@
 package com.exchange.matching.controller;
 
 import com.exchange.matching.dto.ApiError;
+import com.exchange.matching.exception.AccountLockedException;
 import com.exchange.matching.exception.AuthenticationFailedException;
 import com.exchange.matching.exception.ForbiddenOperationException;
 import com.exchange.matching.exception.InsufficientFundsException;
@@ -55,6 +56,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<ApiError> handleAuthenticationFailed(AuthenticationFailedException ex) {
         return build(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<ApiError> handleLocked(AccountLockedException ex) {
+        return build(HttpStatus.LOCKED, ex.getMessage());
     }
 
     @ExceptionHandler({ForbiddenOperationException.class, AccessDeniedException.class})

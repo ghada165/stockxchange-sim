@@ -1,23 +1,42 @@
 package com.exchange.matching.service;
 
+import com.exchange.matching.config.ExchangeProperties;
 import com.exchange.matching.dto.AuthResponse;
+import com.exchange.matching.dto.ChangePasswordRequest;
 import com.exchange.matching.dto.LoginRequest;
 import com.exchange.matching.dto.RegisterRequest;
 import com.exchange.matching.dto.UpdateProfileRequest;
 import com.exchange.matching.dto.UserProfileResponse;
+import com.exchange.matching.exception.AccountLockedException;
 import com.exchange.matching.exception.AuthenticationFailedException;
 import com.exchange.matching.exception.ForbiddenOperationException;
 import com.exchange.matching.model.ActivityType;
 import com.exchange.matching.model.Role;
+import com.exchange.matching.persistence.entity.RevokedTokenEntity;
 import com.exchange.matching.persistence.entity.UserEntity;
+import com.exchange.matching.persistence.repository.RevokedTokenRepository;
 import com.exchange.matching.persistence.repository.UserRepository;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Set;
 
-/** Module Auth & Utilisateurs: inscription, connexion, profil. */
+/**
+ * Module Auth & Utilisateurs: inscription, connexion, deconnexion, profil,
+ * changement de mot de passe.
+ *
+ * La connexion suit la demarche JWT du cours: l'AuthenticationManager verifie
+ * login et mot de passe (via CustomUserDetailsService + BCrypt), puis
+ * TokenService prepare et signe le jeton.
+ */
 @Service
 public class AuthService {
 
@@ -25,21 +44,29 @@ public class AuthService {
     private static final Set<String> RESERVED_USERNAMES = Set.of(TradingService.MARKET_MAKER, "admin", "system");
 
     private final UserRepository userRepository;
+    private final RevokedTokenRepository revokedTokens;
+    private final AuthenticationManager authenticationManager;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final TradingService tradingService;
     private final ActivityLogService activityLog;
+    private final ExchangeProperties properties;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, TokenService tokenService,
-                       TradingService tradingService, ActivityLogService activityLog) {
+    public AuthService(UserRepository userRepository, RevokedTokenRepository revokedTokens,
+                       AuthenticationManager authenticationManager, PasswordEncoder passwordEncoder,
+                       TokenService tokenService, TradingService tradingService, ActivityLogService activityLog,
+                       ExchangeProperties properties) {
         this.userRepository = userRepository;
+        this.revokedTokens = revokedTokens;
+        this.authenticationManager = authenticationManager;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.tradingService = tradingService;
         this.activityLog = activityLog;
+        this.properties = properties;
     }
 
-    /** Inscription d'un TRADER: compte utilisateur + wallet et positions de demo. */
+    /** Inscription d'un TRADER (le role ADMIN ne s'obtient que par un administrateur). */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         String username = normalize(request.username());
@@ -54,23 +81,84 @@ public class AuthService {
     }
 
     /**
-     * Pas de @Transactional ici: un echec de connexion leve une exception,
-     * qui annulerait aussi l'enregistrement de la tentative dans le journal.
+     * Connexion. Pas de @Transactional: un echec leve une exception, qui annulerait
+     * aussi l'enregistrement de la tentative (journal, compteur d'echecs).
+     *
+     * Ordre des controles:
+     *   1. compte verrouille ?            -> 423 (LockedException de Spring)
+     *   2. login et mot de passe valides ? -> 401, et l'echec est compte
+     *   3. compte suspendu ?              -> 403 (seulement si le mot de passe est bon)
      */
     public AuthResponse login(LoginRequest request) {
         String username = normalize(request.username());
-        UserEntity user = userRepository.findByUsername(username)
-            .filter(u -> passwordEncoder.matches(request.password(), u.getPasswordHash()))
-            .orElse(null);
-        if (user == null) {
+        try {
+            authenticationManager.authenticate(
+                UsernamePasswordAuthenticationToken.unauthenticated(username, request.password()));
+        } catch (LockedException e) {
+            activityLog.record(username, ActivityType.LOGIN_FAILED, "Compte verrouille");
+            throw new AccountLockedException("Compte temporairement verrouille apres "
+                + properties.security().maxFailedLogins() + " echecs. Reessayez dans "
+                + properties.security().lockDuration().toMinutes() + " minutes.");
+        } catch (BadCredentialsException e) {
+            // Inconnu ou mauvais mot de passe: meme message, pour ne pas reveler quels comptes existent.
+            userRepository.findByUsername(username).ifPresent(this::countFailedLogin);
             activityLog.record(username, ActivityType.LOGIN_FAILED, "Identifiants invalides");
             throw new AuthenticationFailedException("Nom d'utilisateur ou mot de passe incorrect");
         }
+
+        UserEntity user = userRepository.findByUsername(username).orElseThrow();
         if (!user.isActive()) {
             activityLog.record(username, ActivityType.LOGIN_FAILED, "Compte suspendu");
             throw new ForbiddenOperationException("Ce compte est suspendu. Contactez un administrateur.");
         }
+        user.registerSuccessfulLogin();
+        userRepository.save(user);
         activityLog.record(username, ActivityType.LOGIN_SUCCESS, "Connexion (" + user.getRole() + ")");
+        return tokenService.issue(user);
+    }
+
+    private void countFailedLogin(UserEntity user) {
+        Duration lockDuration = properties.security().lockDuration();
+        boolean nowLocked = user.registerFailedLogin(properties.security().maxFailedLogins(), lockDuration, Instant.now());
+        userRepository.save(user);
+        if (nowLocked) {
+            activityLog.record(user.getUsername(), ActivityType.ACCOUNT_LOCKED,
+                "Verrouille " + lockDuration.toMinutes() + " min apres " + properties.security().maxFailedLogins()
+                    + " echecs consecutifs");
+        }
+    }
+
+    /**
+     * Deconnexion: le jeton courant est ajoute a la liste de revocation. Il sera
+     * refuse par TokenRevocationValidator jusqu'a son expiration naturelle.
+     */
+    @Transactional
+    public void logout(Jwt jwt) {
+        if (jwt.getId() != null && !revokedTokens.existsById(jwt.getId())) {
+            revokedTokens.save(new RevokedTokenEntity(jwt.getId(), jwt.getSubject(), jwt.getExpiresAt()));
+        }
+        activityLog.record(jwt.getSubject(), ActivityType.LOGOUT, "Deconnexion");
+    }
+
+    /**
+     * Changement de mot de passe: l'ancien est reverifie par l'AuthenticationManager,
+     * puis TOUS les jetons existants du compte sont invalides (sessions ouvertes
+     * ailleurs comprises). Un nouveau jeton est renvoye pour rester connecte ici.
+     */
+    @Transactional
+    public AuthResponse changePassword(String username, ChangePasswordRequest request) {
+        try {
+            authenticationManager.authenticate(
+                UsernamePasswordAuthenticationToken.unauthenticated(username, request.currentPassword()));
+        } catch (BadCredentialsException | LockedException e) {
+            throw new AuthenticationFailedException("Mot de passe actuel incorrect");
+        }
+        if (request.currentPassword().equals(request.newPassword())) {
+            throw new IllegalArgumentException("Le nouveau mot de passe doit etre different de l'ancien");
+        }
+        UserEntity user = requireUser(username);
+        user.changePassword(passwordEncoder.encode(request.newPassword()));
+        activityLog.record(username, ActivityType.PASSWORD_CHANGED, "Mot de passe modifie, jetons existants invalides");
         return tokenService.issue(user);
     }
 
