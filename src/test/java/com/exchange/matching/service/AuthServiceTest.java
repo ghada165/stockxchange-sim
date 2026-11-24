@@ -195,7 +195,7 @@ class AuthServiceTest {
     @Test
     void logout_shouldRevokeTheCurrentToken() {
         Instant expiry = Instant.now().plusSeconds(3600);
-        Jwt jwt = Jwt.withTokenValue("t").header("alg", "HS256").subject("alice").jwtId("jti-1").expiresAt(expiry).build();
+        Jwt jwt = Jwt.withTokenValue("t").header("alg", "HS256").subject("alice").jti("jti-1").expiresAt(expiry).build();
         when(revokedTokens.existsById("jti-1")).thenReturn(false);
 
         authService.logout(jwt);

@@ -59,7 +59,7 @@ class AdminControllerTest {
 
     private static AdminUserResponse user(String username, AccountStatus status) {
         return new AdminUserResponse(username, null, null, Role.TRADER, status, Instant.parse("2026-11-01T10:00:00Z"),
-            new BigDecimal("100000"), 2);
+            null, new BigDecimal("100000"), 2); // lockedUntil = null: compte non verrouille
     }
 
     @Test
