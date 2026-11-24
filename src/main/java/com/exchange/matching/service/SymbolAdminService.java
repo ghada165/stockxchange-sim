@@ -18,6 +18,7 @@ import com.exchange.matching.persistence.repository.PositionRepository;
 import com.exchange.matching.persistence.repository.SymbolRepository;
 import com.exchange.matching.persistence.repository.TradeRepository;
 import com.exchange.matching.persistence.repository.WalletRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -37,33 +38,26 @@ public class SymbolAdminService {
 
     private static final List<OrderStatus> ACTIVE = List.of(OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED);
 
-    private final SymbolRepository symbolRepository;
-    private final WalletRepository walletRepository;
-    private final PositionRepository positionRepository;
-    private final OrderRepository orderRepository;
-    private final TradeRepository tradeRepository;
-    private final TradingService tradingService;
-    private final MarketSeeder marketSeeder;
-    private final ActivityLogService activityLog;
-    private final ExchangeProperties properties;
-    private final TransactionTemplate transactionTemplate;
-
-    public SymbolAdminService(SymbolRepository symbolRepository, WalletRepository walletRepository,
-                              PositionRepository positionRepository, OrderRepository orderRepository,
-                              TradeRepository tradeRepository, TradingService tradingService,
-                              MarketSeeder marketSeeder, ActivityLogService activityLog,
-                              ExchangeProperties properties, TransactionTemplate transactionTemplate) {
-        this.symbolRepository = symbolRepository;
-        this.walletRepository = walletRepository;
-        this.positionRepository = positionRepository;
-        this.orderRepository = orderRepository;
-        this.tradeRepository = tradeRepository;
-        this.tradingService = tradingService;
-        this.marketSeeder = marketSeeder;
-        this.activityLog = activityLog;
-        this.properties = properties;
-        this.transactionTemplate = transactionTemplate;
-    }
+    @Autowired
+    private SymbolRepository symbolRepository;
+    @Autowired
+    private WalletRepository walletRepository;
+    @Autowired
+    private PositionRepository positionRepository;
+    @Autowired
+    private OrderRepository orderRepository;
+    @Autowired
+    private TradeRepository tradeRepository;
+    @Autowired
+    private TradingService tradingService;
+    @Autowired
+    private MarketSeeder marketSeeder;
+    @Autowired
+    private ActivityLogService activityLog;
+    @Autowired
+    private ExchangeProperties properties;
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     // ------------------------------------------------------------------
     // Read

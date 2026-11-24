@@ -3,6 +3,7 @@ package com.exchange.matching.service;
 import com.exchange.matching.exception.MarketClosedException;
 import com.exchange.matching.persistence.entity.SymbolEntity;
 import com.exchange.matching.persistence.repository.SymbolRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,11 +13,8 @@ import java.util.List;
 @Service
 public class SymbolService {
 
-    private final SymbolRepository repository;
-
-    public SymbolService(SymbolRepository repository) {
-        this.repository = repository;
-    }
+    @Autowired
+    private SymbolRepository repository;
 
     @Transactional(readOnly = true)
     public List<SymbolEntity> list() {

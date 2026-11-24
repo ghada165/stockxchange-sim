@@ -8,6 +8,7 @@ import com.exchange.matching.model.ActivityType;
 import com.exchange.matching.model.MarketHours;
 import com.exchange.matching.persistence.entity.MarketSettingsEntity;
 import com.exchange.matching.persistence.repository.MarketSettingsRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,18 +26,14 @@ public class MarketHoursService {
 
     private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
 
-    private final MarketSettingsRepository repository;
-    private final ExchangeProperties properties;
-    private final ActivityLogService activityLog;
+    @Autowired
+    private MarketSettingsRepository repository;
+    @Autowired
+    private ExchangeProperties properties;
+    @Autowired
+    private ActivityLogService activityLog;
 
     private volatile MarketHours current;
-
-    public MarketHoursService(MarketSettingsRepository repository, ExchangeProperties properties,
-                              ActivityLogService activityLog) {
-        this.repository = repository;
-        this.properties = properties;
-        this.activityLog = activityLog;
-    }
 
     /** Au demarrage: reprend les horaires en base, ou les cree depuis application.yml. */
     @Transactional

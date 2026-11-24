@@ -9,6 +9,7 @@ import com.exchange.matching.service.MarketHoursService;
 import com.exchange.matching.service.TradingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,23 +39,18 @@ public class DataInitializer implements CommandLineRunner {
         new String[]{"carol", "Carol Petit"}
     );
 
-    private final ExchangeProperties properties;
-    private final SymbolRepository symbolRepository;
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final MarketHoursService marketHours;
-    private final TradingService tradingService;
-
-    public DataInitializer(ExchangeProperties properties, SymbolRepository symbolRepository,
-                           UserRepository userRepository, PasswordEncoder passwordEncoder,
-                           MarketHoursService marketHours, TradingService tradingService) {
-        this.properties = properties;
-        this.symbolRepository = symbolRepository;
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.marketHours = marketHours;
-        this.tradingService = tradingService;
-    }
+    @Autowired
+    private ExchangeProperties properties;
+    @Autowired
+    private SymbolRepository symbolRepository;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    @Autowired
+    private MarketHoursService marketHours;
+    @Autowired
+    private TradingService tradingService;
 
     @Override
     @Transactional

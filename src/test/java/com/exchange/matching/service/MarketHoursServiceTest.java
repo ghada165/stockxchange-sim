@@ -1,5 +1,6 @@
 package com.exchange.matching.service;
 
+import com.exchange.matching.TestInjection;
 import com.exchange.matching.config.ExchangeProperties;
 import com.exchange.matching.dto.MarketHoursRequest;
 import com.exchange.matching.dto.MarketStatusResponse;
@@ -48,7 +49,7 @@ class MarketHoursServiceTest {
     void setUp() {
         ExchangeProperties properties = new ExchangeProperties(null, null, null, false, false,
             new ExchangeProperties.MarketHoursSettings("09:00", "17:30", "Europe/Paris", null, false), null);
-        service = new MarketHoursService(repository, properties, activityLog);
+        service = TestInjection.inject(new MarketHoursService(), repository, properties, activityLog);
     }
 
     /** Tous les jours sauf aujourd'hui: le marche est forcement ferme maintenant. */

@@ -1,5 +1,6 @@
 package com.exchange.matching.service;
 
+import com.exchange.matching.TestInjection;
 import com.exchange.matching.dto.AdminOverviewResponse;
 import com.exchange.matching.dto.AdminUserResponse;
 import com.exchange.matching.exception.ForbiddenOperationException;
@@ -48,13 +49,15 @@ class AdminServiceTest {
     @Mock private ReportingService reportingService;
     @Mock private MarketHoursService marketHours;
     @Mock private ActivityLogService activityLog;
+    @Mock private TradingService tradingService;
 
     private AdminService adminService;
 
     @BeforeEach
     void setUp() {
-        adminService = new AdminService(userRepository, walletRepository, orderRepository, symbolRepository,
-            reportingService, marketHours, activityLog, new TransactionTemplate(mock(PlatformTransactionManager.class)));
+        adminService = TestInjection.inject(new AdminService(), userRepository, walletRepository, orderRepository,
+            symbolRepository, reportingService, marketHours, activityLog, tradingService,
+            new TransactionTemplate(mock(PlatformTransactionManager.class)));
     }
 
     @Test

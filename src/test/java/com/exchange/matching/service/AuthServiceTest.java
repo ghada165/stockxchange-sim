@@ -1,6 +1,12 @@
 package com.exchange.matching.service;
 
+import com.exchange.matching.TestInjection;
+import com.exchange.matching.config.ExchangeProperties;
 import com.exchange.matching.dto.AuthResponse;
+import com.exchange.matching.dto.ChangePasswordRequest;
+import com.exchange.matching.exception.AccountLockedException;
+import com.exchange.matching.persistence.entity.RevokedTokenEntity;
+import com.exchange.matching.persistence.repository.RevokedTokenRepository;
 import com.exchange.matching.dto.LoginRequest;
 import com.exchange.matching.dto.RegisterRequest;
 import com.exchange.matching.dto.UpdateProfileRequest;
@@ -12,13 +18,19 @@ import com.exchange.matching.model.ActivityType;
 import com.exchange.matching.model.Role;
 import com.exchange.matching.persistence.entity.UserEntity;
 import com.exchange.matching.persistence.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -40,9 +52,17 @@ class AuthServiceTest {
     @Mock private TokenService tokenService;
     @Mock private TradingService tradingService;
     @Mock private ActivityLogService activityLog;
+    @Mock private AuthenticationManager authenticationManager;
+    @Mock private RevokedTokenRepository revokedTokens;
 
     @InjectMocks
     private AuthService authService;
+
+    /** Configuration reelle (5 echecs, 15 min): @InjectMocks n'injecte que les mocks. */
+    @BeforeEach
+    void setUp() {
+        TestInjection.inject(authService, new ExchangeProperties(null, null, null, false, false, null, null));
+    }
 
     private static AuthResponse token(UserEntity user) {
         return new AuthResponse("jwt", Instant.now(), UserProfileResponse.from(user));
@@ -91,35 +111,40 @@ class AuthServiceTest {
         verify(userRepository, never()).save(any());
     }
 
-    // ---------- Connexion ----------
+    // ---------- Connexion (via l'AuthenticationManager, comme dans le cours) ----------
 
     @Test
     void login_withValidCredentials_shouldIssueTokenAndLogSuccess() {
         UserEntity alice = new UserEntity("alice", "hash", null, null, Role.TRADER);
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
-        when(passwordEncoder.matches("password123", "hash")).thenReturn(true);
         when(tokenService.issue(alice)).thenReturn(token(alice));
 
         AuthResponse response = authService.login(new LoginRequest("ALICE", "password123"));
 
+        ArgumentCaptor<UsernamePasswordAuthenticationToken> sent = ArgumentCaptor.forClass(UsernamePasswordAuthenticationToken.class);
+        verify(authenticationManager).authenticate(sent.capture());
+        assertThat(sent.getValue().getName()).isEqualTo("alice"); // nom normalise avant verification
         assertThat(response.user().username()).isEqualTo("alice");
         verify(activityLog).record(eq("alice"), eq(ActivityType.LOGIN_SUCCESS), anyString());
     }
 
     @Test
-    void login_withWrongPassword_shouldThrowAndLogFailure() {
-        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(new UserEntity("alice", "hash", null, null, Role.TRADER)));
-        when(passwordEncoder.matches("wrong", "hash")).thenReturn(false);
+    void login_withWrongPassword_shouldThrowCountFailureAndLog() {
+        UserEntity alice = new UserEntity("alice", "hash", null, null, Role.TRADER);
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("alice", "wrong")))
             .isInstanceOf(AuthenticationFailedException.class);
 
+        assertThat(alice.getFailedLoginAttempts()).isEqualTo(1);
         verify(activityLog).record("alice", ActivityType.LOGIN_FAILED, "Identifiants invalides");
         verify(tokenService, never()).issue(any());
     }
 
     @Test
     void login_withUnknownUser_shouldThrowSameErrorAsWrongPassword() {
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
         when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("ghost", "x")))
@@ -128,17 +153,83 @@ class AuthServiceTest {
     }
 
     @Test
+    void login_fifthFailure_shouldLockTheAccount() {
+        UserEntity alice = new UserEntity("alice", "hash", null, null, Role.TRADER);
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> authService.login(new LoginRequest("alice", "wrong")))
+                .isInstanceOf(AuthenticationFailedException.class);
+        }
+
+        assertThat(alice.isLocked(Instant.now())).isTrue();
+        verify(activityLog).record(eq("alice"), eq(ActivityType.ACCOUNT_LOCKED), anyString());
+    }
+
+    @Test
+    void login_onLockedAccount_shouldThrowLocked() {
+        when(authenticationManager.authenticate(any())).thenThrow(new LockedException("locked"));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("alice", "password123")))
+            .isInstanceOf(AccountLockedException.class)
+            .hasMessageContaining("15 minutes");
+        verify(tokenService, never()).issue(any());
+    }
+
+    @Test
     void login_withSuspendedAccount_shouldThrowForbidden() {
         UserEntity eve = new UserEntity("eve", "hash", null, null, Role.TRADER);
         eve.setStatus(AccountStatus.SUSPENDED);
         when(userRepository.findByUsername("eve")).thenReturn(Optional.of(eve));
-        when(passwordEncoder.matches("motdepasse1", "hash")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("eve", "motdepasse1")))
             .isInstanceOf(ForbiddenOperationException.class);
 
         verify(activityLog).record("eve", ActivityType.LOGIN_FAILED, "Compte suspendu");
         verify(tokenService, never()).issue(any());
+    }
+
+    // ---------- Deconnexion et mot de passe ----------
+
+    @Test
+    void logout_shouldRevokeTheCurrentToken() {
+        Instant expiry = Instant.now().plusSeconds(3600);
+        Jwt jwt = Jwt.withTokenValue("t").header("alg", "HS256").subject("alice").jwtId("jti-1").expiresAt(expiry).build();
+        when(revokedTokens.existsById("jti-1")).thenReturn(false);
+
+        authService.logout(jwt);
+
+        ArgumentCaptor<RevokedTokenEntity> revoked = ArgumentCaptor.forClass(RevokedTokenEntity.class);
+        verify(revokedTokens).save(revoked.capture());
+        assertThat(revoked.getValue().getJti()).isEqualTo("jti-1");
+        assertThat(revoked.getValue().getExpiresAt()).isEqualTo(expiry);
+        verify(activityLog).record("alice", ActivityType.LOGOUT, "Deconnexion");
+    }
+
+    @Test
+    void changePassword_shouldHashNewPasswordAndInvalidateOldTokens() {
+        UserEntity alice = new UserEntity("alice", "old-hash", null, null, Role.TRADER);
+        int versionBefore = alice.getTokenVersion();
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(passwordEncoder.encode("nouveau2026")).thenReturn("new-hash");
+        when(tokenService.issue(alice)).thenReturn(token(alice));
+
+        authService.changePassword("alice", new ChangePasswordRequest("motdepasse1", "nouveau2026"));
+
+        assertThat(alice.getPasswordHash()).isEqualTo("new-hash");
+        assertThat(alice.getTokenVersion()).isEqualTo(versionBefore + 1);
+        verify(activityLog).record(eq("alice"), eq(ActivityType.PASSWORD_CHANGED), anyString());
+    }
+
+    @Test
+    void changePassword_withWrongCurrentPassword_shouldChangeNothing() {
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
+
+        assertThatThrownBy(() -> authService.changePassword("alice", new ChangePasswordRequest("faux", "nouveau2026")))
+            .isInstanceOf(AuthenticationFailedException.class);
+
+        verify(passwordEncoder, never()).encode(anyString());
     }
 
     // ---------- Profil ----------

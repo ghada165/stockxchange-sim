@@ -12,6 +12,7 @@ import com.exchange.matching.service.TradingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,16 +27,12 @@ import java.util.List;
 @Tag(name = "Marche", description = "Donnees publiques, accessibles sans connexion")
 public class MarketController {
 
-    private final TradingService tradingService;
-    private final ReportingService reportingService;
-    private final MarketHoursService marketHours;
-
-    public MarketController(TradingService tradingService, ReportingService reportingService,
-                            MarketHoursService marketHours) {
-        this.tradingService = tradingService;
-        this.reportingService = reportingService;
-        this.marketHours = marketHours;
-    }
+    @Autowired
+    private TradingService tradingService;
+    @Autowired
+    private ReportingService reportingService;
+    @Autowired
+    private MarketHoursService marketHours;
 
     /** GET /api/market/status : marche ouvert ou ferme, et ses horaires. */
     @GetMapping("/status")

@@ -19,8 +19,8 @@ export function AppHeader({ connected }: { connected?: boolean }) {
     { href: "/profil", label: "Profil", show: !!session },
   ].filter((l) => l.show);
 
-  function logout() {
-    api.logout();
+  async function logout() {
+    await api.logout();
     router.push("/");
   }
 

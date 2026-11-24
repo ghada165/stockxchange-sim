@@ -10,6 +10,7 @@ import com.exchange.matching.persistence.repository.TradeRepository;
 import com.exchange.matching.reporting.CandleAggregator;
 import com.exchange.matching.reporting.CandleAggregator.PricePoint;
 import com.exchange.matching.reporting.TradeStats;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,13 +36,10 @@ public class ReportingService {
 
     private static final Duration STATS_PERIOD = Duration.ofHours(24);
 
-    private final TradeRepository tradeRepository;
-    private final SymbolService symbolService;
-
-    public ReportingService(TradeRepository tradeRepository, SymbolService symbolService) {
-        this.tradeRepository = tradeRepository;
-        this.symbolService = symbolService;
-    }
+    @Autowired
+    private TradeRepository tradeRepository;
+    @Autowired
+    private SymbolService symbolService;
 
     /** Historique de prix en chandeliers OHLC. */
     public List<CandleResponse> candles(String symbol, String interval) {

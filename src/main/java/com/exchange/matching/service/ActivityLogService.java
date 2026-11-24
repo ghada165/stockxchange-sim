@@ -4,6 +4,7 @@ import com.exchange.matching.dto.ActivityLogResponse;
 import com.exchange.matching.model.ActivityType;
 import com.exchange.matching.persistence.entity.ActivityLogEntity;
 import com.exchange.matching.persistence.repository.ActivityLogRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,11 +18,8 @@ import java.util.List;
 @Service
 public class ActivityLogService {
 
-    private final ActivityLogRepository repository;
-
-    public ActivityLogService(ActivityLogRepository repository) {
-        this.repository = repository;
-    }
+    @Autowired
+    private ActivityLogRepository repository;
 
     public void record(String actor, ActivityType action, String details) {
         repository.save(new ActivityLogEntity(actor, action, details));

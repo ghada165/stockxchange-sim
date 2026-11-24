@@ -66,7 +66,7 @@ Le CRUD de référence pour le TP 5 est `SymbolAdminController` / `SymbolAdminSe
 
 | Module | Fonctionnalités | Où |
 |---|---|---|
-| Auth & Utilisateurs | Inscription / connexion **JWT**, profil, rôles Trader / Admin | `AuthController`, `AuthService`, `TokenService`, `SecurityConfig` |
+| Auth & Utilisateurs | Inscription / connexion **JWT**, déconnexion (révocation), changement de mot de passe, verrouillage après 5 échecs, profil, attribution de rôle Trader / Admin | `AuthController`, `AuthService`, `TokenService`, `SecurityConfig`, package `security/` |
 | Marché | Symboles en base, prix courant, **historique de prix** (chandeliers 1m/5m/15m/1h), **heures d'ouverture** | `MarketController`, `SymbolService`, `MarketHoursService`, `ReportingService` |
 | Ordres | LIMIT / MARKET, annulation, ordres en cours et historique | `OrderController`, `TradingService` |
 | Matching Engine | Priorité prix puis temps, exécution totale ou partielle, un carnet par symbole | `engine/` |
@@ -82,6 +82,40 @@ Le CRUD de référence pour le TP 5 est `SymbolAdminController` / `SymbolAdminSe
 | Admin | `/api/admin/**` (ne passe pas d'ordres) |
 | Système | Le moteur apparie, règle et diffuse automatiquement dans `TradingService` |
 
+## Injection de dépendances
+Tous les beans Spring (services, contrôleurs, configuration, sécurité) reçoivent leurs
+dépendances par **`@Autowired` sur les champs**, comme dans le cours. Les records (DTO),
+les entités JPA et les classes du domaine (`Order`, `MatchingEngine`…) ne sont pas des
+beans et gardent leurs constructeurs.
+
+Dans les tests unitaires, `@InjectMocks` (Mockito) remplit ces champs ; pour un
+service construit à la main, `TestInjection.inject(new MonService(), dep1, dep2…)`
+fait la même chose que Spring.
+
+## Authentification et règles d'accès
+Architecture du cours *Authentification dans Spring Boot avec Spring Security* :
+
+| Brique | Classe |
+|---|---|
+| `SecurityFilterChain` (règles d'accès) | `config/SecurityConfig` |
+| `AuthenticationManager` (vérifie login + mot de passe) | `config/SecurityConfig` → `DaoAuthenticationProvider` |
+| `UserDetailsService` (charge l'utilisateur depuis la base) | `security/CustomUserDetailsService` |
+| `PasswordEncoder` (hachage) | `BCryptPasswordEncoder` |
+| Émission du JWT (jti, sub, roles, ver, exp) | `service/TokenService` |
+| Validation de chaque jeton (révocation, suspension, version) | `security/TokenRevocationValidator` |
+| Réponses 401 / 403 en JSON | `security/JsonSecurityErrorHandler` |
+
+- **Sans état** : aucune session serveur, le jeton est renvoyé dans `Authorization: Bearer <jeton>`.
+- **Mots de passe** : hachés en BCrypt ; au moins 8 caractères, une lettre et un chiffre.
+- **Déconnexion** : l'identifiant du jeton (`jti`) est mis en liste de révocation jusqu'à son expiration.
+- **Invalidation globale** : changer de mot de passe ou de rôle, ou être suspendu, incrémente la
+  version des jetons du compte (`ver`) : tous les jetons déjà émis sont refusés.
+- **Verrouillage** : 5 échecs consécutifs verrouillent le compte 15 minutes (configurable).
+- **Messages neutres** : un utilisateur inconnu et un mauvais mot de passe donnent la même erreur.
+- **Règles d'accès en double** : par URL (`SecurityConfig`) et par méthode (`@PreAuthorize`) ;
+  toute route non déclarée est refusée (`denyAll`).
+- Il reste toujours au moins un administrateur actif ; un admin ne peut modifier ni son rôle ni son statut.
+
 ## Fonctionnalités du moteur
 - **Ordre MARKET protégé** : prix plafonné au pire niveau du carnet au moment
   de l'envoi, pour qu'un acheteur ne dépense jamais plus que ce qui a été bloqué
@@ -95,7 +129,9 @@ Le CRUD de référence pour le TP 5 est `SymbolAdminController` / `SymbolAdminSe
 |---|---|---|---|
 | POST | `/api/auth/register` | public | Inscription d'un trader, renvoie un jeton |
 | POST | `/api/auth/login` | public | Connexion, renvoie un jeton |
+| POST | `/api/auth/logout` | connecté | Déconnexion : révoque le jeton |
 | GET / PUT | `/api/auth/me` | connecté | Profil |
+| PUT | `/api/auth/password` | connecté | Changer de mot de passe (invalide les autres jetons) |
 | GET | `/api/market/status` | public | Marché ouvert ou fermé, horaires |
 | GET | `/api/market/symbols` | public | Symboles, statut, dernier prix, meilleurs prix |
 | GET | `/api/market/{symbol}/orderbook` | public | Carnet d'ordres |
@@ -110,6 +146,8 @@ Le CRUD de référence pour le TP 5 est `SymbolAdminController` / `SymbolAdminSe
 | GET | `/api/admin/overview` | admin | Tableau de bord |
 | GET | `/api/admin/users` | admin | Utilisateurs |
 | PATCH | `/api/admin/users/{username}/status` | admin | Suspendre / réactiver |
+| PATCH | `/api/admin/users/{username}/role` | admin | Attribuer le rôle TRADER ou ADMIN |
+| POST | `/api/admin/users/{username}/unlock` | admin | Lever un verrouillage après échecs |
 | POST | `/api/admin/symbols` | admin | Ajouter un symbole (201) |
 | GET | `/api/admin/symbols` | admin | Lister les symboles |
 | GET | `/api/admin/symbols/{symbol}` | admin | Détail d'un symbole (404 si inconnu) |
@@ -157,7 +195,7 @@ stockxchange-front/   Interface Next.js
   le règlement en base échouait après un match, mémoire et base
   divergeraient. En production, on utiliserait un journal d'événements
   (event sourcing / outbox pattern).
-- **Authentification** : JWT signé en HMAC-SHA256, sans session serveur.
+- **Authentification** : JWT signé en HMAC-SHA256 (signé, pas chiffré : il ne contient aucun secret).
   Changer `exchange.security.jwt-secret` et le mot de passe admin en production
   (variables `EXCHANGE_SECURITY_JWT_SECRET` et `EXCHANGE_SECURITY_ADMIN_PASSWORD`).
 - Prix au centime et quantités en actions entières : aucun arrondi sur les

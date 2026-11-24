@@ -150,6 +150,7 @@ export interface AdminUser {
   role: "TRADER" | "ADMIN";
   status: AccountStatus;
   createdAt: string;
+  lockedUntil: string | null;
   cashBalance: Decimal | null;
   activeOrders: number;
 }
@@ -223,7 +224,23 @@ export const api = {
   login: (username: string, password: string) => authenticate("/api/auth/login", { username, password }),
   register: (payload: { username: string; password: string; displayName?: string; email?: string }) =>
     authenticate("/api/auth/register", payload),
-  logout: () => setSession(null),
+  /** Revoque le jeton cote serveur, puis oublie la session meme si le serveur est injoignable. */
+  logout: async () => {
+    try {
+      if (getSession()) await request<void>("/api/auth/logout", json("POST"));
+    } catch {
+      // jeton deja expire ou serveur injoignable: on se deconnecte quand meme localement
+    } finally {
+      setSession(null);
+    }
+  },
+  /** Change le mot de passe; le serveur invalide les autres jetons et renvoie un nouveau jeton. */
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const response = await request<AuthResponse>("/api/auth/password", json("PUT", { currentPassword, newPassword }));
+    const session: Session = { token: response.token, expiresAt: response.expiresAt, user: response.user };
+    setSession(session);
+    return session;
+  },
   me: () => request<SessionUser>("/api/auth/me"),
   updateProfile: (payload: { displayName: string; email: string }) =>
     request<SessionUser>("/api/auth/me", json("PUT", payload)),
@@ -250,6 +267,10 @@ export const api = {
     users: () => request<AdminUser[]>("/api/admin/users"),
     setUserStatus: (username: string, status: AccountStatus) =>
       request<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}/status`, json("PATCH", { status })),
+    setUserRole: (username: string, role: "TRADER" | "ADMIN") =>
+      request<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}/role`, json("PATCH", { role })),
+    unlockUser: (username: string) =>
+      request<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}/unlock`, json("POST")),
     createSymbol: (payload: { symbol: string; name: string; referencePrice: number }) =>
       request<MarketSummary>("/api/admin/symbols", json("POST", payload)),
     symbol: (symbol: string) => request<MarketSummary>(`/api/admin/symbols/${encodeURIComponent(symbol)}`),

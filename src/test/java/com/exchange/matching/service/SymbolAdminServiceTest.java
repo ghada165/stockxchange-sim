@@ -1,5 +1,6 @@
 package com.exchange.matching.service;
 
+import com.exchange.matching.TestInjection;
 import com.exchange.matching.config.ExchangeProperties;
 import com.exchange.matching.config.MarketSeeder;
 import com.exchange.matching.dto.CreateSymbolRequest;
@@ -76,8 +77,8 @@ class SymbolAdminServiceTest {
         ExchangeProperties properties = new ExchangeProperties(new BigDecimal("100000"), new BigDecimal("100"),
             List.of(), false, false, null, null);
         TransactionTemplate tx = new TransactionTemplate(mock(PlatformTransactionManager.class));
-        service = new SymbolAdminService(symbolRepository, walletRepository, positionRepository, orderRepository,
-            tradeRepository, tradingService, marketSeeder, activityLog, properties, tx);
+        service = TestInjection.inject(new SymbolAdminService(), symbolRepository, walletRepository, positionRepository,
+            orderRepository, tradeRepository, tradingService, marketSeeder, activityLog, properties, tx);
         apple = new SymbolEntity("AAPL", "Apple Inc.", new BigDecimal("230.00"));
     }
 

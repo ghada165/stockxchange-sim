@@ -6,6 +6,7 @@ import com.exchange.matching.dto.AdminOverviewResponse;
 import com.exchange.matching.dto.AdminUserResponse;
 import com.exchange.matching.dto.MarketHoursRequest;
 import com.exchange.matching.dto.MarketStatusResponse;
+import com.exchange.matching.dto.RoleUpdateRequest;
 import com.exchange.matching.dto.StatusUpdateRequest;
 import com.exchange.matching.model.ActivityType;
 import com.exchange.matching.service.ActivityLogService;
@@ -18,6 +19,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,20 +32,18 @@ import java.util.List;
  * Le CRUD des symboles est dans {@link SymbolAdminController}.
  */
 @RestController
+@PreAuthorize("hasRole('ADMIN')") // double la regle d'URL de SecurityConfig (defense en profondeur)
 @RequestMapping("/api/admin")
 @Tag(name = "Admin", description = "Tableau de bord, utilisateurs, heures de marche, journal (role ADMIN)")
 @SecurityRequirement(name = OpenApiConfig.BEARER)
 public class AdminController {
 
-    private final AdminService adminService;
-    private final MarketHoursService marketHours;
-    private final ActivityLogService activityLog;
-
-    public AdminController(AdminService adminService, MarketHoursService marketHours, ActivityLogService activityLog) {
-        this.adminService = adminService;
-        this.marketHours = marketHours;
-        this.activityLog = activityLog;
-    }
+    @Autowired
+    private AdminService adminService;
+    @Autowired
+    private MarketHoursService marketHours;
+    @Autowired
+    private ActivityLogService activityLog;
 
     @GetMapping("/overview")
     @Operation(summary = "Tableau de bord", description = "Utilisateurs, symboles, ordres actifs, volume 24 h, etat du marche.")
@@ -68,6 +69,28 @@ public class AdminController {
                                            @PathVariable String username,
                                            @Valid @RequestBody StatusUpdateRequest request) {
         return adminService.setUserStatus(authentication.getName(), username, request.status());
+    }
+
+    @PatchMapping("/users/{username}/role")
+    @Operation(summary = "Attribuer un role", description = "TRADER ou ADMIN. Les jetons existants de l'utilisateur sont invalides: il se reconnecte avec ses nouveaux droits.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Role modifie"),
+        @ApiResponse(responseCode = "403", description = "Son propre role, ou dernier administrateur actif"),
+        @ApiResponse(responseCode = "404", description = "Utilisateur inconnu")
+    })
+    public AdminUserResponse setUserRole(Authentication authentication,
+                                         @Parameter(description = "Nom d'utilisateur", example = "alice")
+                                         @PathVariable String username,
+                                         @Valid @RequestBody RoleUpdateRequest request) {
+        return adminService.setUserRole(authentication.getName(), username, request.role());
+    }
+
+    @PostMapping("/users/{username}/unlock")
+    @Operation(summary = "Deverrouiller un compte", description = "Leve le verrouillage pose apres trop d'echecs de connexion.")
+    public AdminUserResponse unlockUser(Authentication authentication,
+                                        @Parameter(description = "Nom d'utilisateur", example = "alice")
+                                        @PathVariable String username) {
+        return adminService.unlockUser(authentication.getName(), username);
     }
 
     @PutMapping("/market-hours")

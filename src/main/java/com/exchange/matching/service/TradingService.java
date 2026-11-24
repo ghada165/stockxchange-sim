@@ -24,6 +24,7 @@ import com.exchange.matching.persistence.repository.UserRepository;
 import com.exchange.matching.persistence.repository.WalletRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -65,44 +66,30 @@ public class TradingService {
      */
     public static final String MARKET_MAKER = "market-maker";
 
-    private final MatchingEngine matchingEngine;
-    private final OrderRepository orderRepository;
-    private final TradeRepository tradeRepository;
-    private final WalletRepository walletRepository;
-    private final PositionRepository positionRepository;
-    private final MarketBroadcaster broadcaster;
-    private final ExchangeProperties properties;
-    private final TransactionTemplate transactionTemplate;
-    private final SymbolService symbolService;
-    private final MarketHoursService marketHours;
-    private final UserRepository userRepository;
-    private final ActivityLogService activityLog;
-
-    public TradingService(MatchingEngine matchingEngine,
-                          OrderRepository orderRepository,
-                          TradeRepository tradeRepository,
-                          WalletRepository walletRepository,
-                          PositionRepository positionRepository,
-                          MarketBroadcaster broadcaster,
-                          ExchangeProperties properties,
-                          TransactionTemplate transactionTemplate,
-                          SymbolService symbolService,
-                          MarketHoursService marketHours,
-                          UserRepository userRepository,
-                          ActivityLogService activityLog) {
-        this.matchingEngine = matchingEngine;
-        this.orderRepository = orderRepository;
-        this.tradeRepository = tradeRepository;
-        this.walletRepository = walletRepository;
-        this.positionRepository = positionRepository;
-        this.broadcaster = broadcaster;
-        this.properties = properties;
-        this.transactionTemplate = transactionTemplate;
-        this.symbolService = symbolService;
-        this.marketHours = marketHours;
-        this.userRepository = userRepository;
-        this.activityLog = activityLog;
-    }
+    @Autowired
+    private MatchingEngine matchingEngine;
+    @Autowired
+    private OrderRepository orderRepository;
+    @Autowired
+    private TradeRepository tradeRepository;
+    @Autowired
+    private WalletRepository walletRepository;
+    @Autowired
+    private PositionRepository positionRepository;
+    @Autowired
+    private MarketBroadcaster broadcaster;
+    @Autowired
+    private ExchangeProperties properties;
+    @Autowired
+    private TransactionTemplate transactionTemplate;
+    @Autowired
+    private SymbolService symbolService;
+    @Autowired
+    private MarketHoursService marketHours;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private ActivityLogService activityLog;
 
     // ------------------------------------------------------------------
     // Placement d'ordre

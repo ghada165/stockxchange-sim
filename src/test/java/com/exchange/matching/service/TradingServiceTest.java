@@ -1,5 +1,6 @@
 package com.exchange.matching.service;
 
+import com.exchange.matching.TestInjection;
 import com.exchange.matching.config.ExchangeProperties;
 import com.exchange.matching.dto.MarketSummaryResponse;
 import com.exchange.matching.dto.OrderBookResponse;
@@ -98,8 +99,8 @@ class TradingServiceTest {
         engine = new MatchingEngine();
         ExchangeProperties properties = new ExchangeProperties(new BigDecimal("100000"), new BigDecimal("100"),
             List.of(), false, false, null, null);
-        service = new TradingService(engine, orderRepository, tradeRepository, walletRepository, positionRepository,
-            broadcaster, properties, new TransactionTemplate(mock(PlatformTransactionManager.class)),
+        service = TestInjection.inject(new TradingService(), engine, orderRepository, tradeRepository, walletRepository,
+            positionRepository, broadcaster, properties, new TransactionTemplate(mock(PlatformTransactionManager.class)),
             symbolService, marketHours, userRepository, activityLog);
 
         SymbolEntity apple = new SymbolEntity(AAPL, "Apple Inc.", new BigDecimal("230.00"));

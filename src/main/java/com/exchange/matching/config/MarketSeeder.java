@@ -9,6 +9,7 @@ import com.exchange.matching.service.SymbolService;
 import com.exchange.matching.service.TradingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -36,18 +37,14 @@ public class MarketSeeder implements CommandLineRunner {
     private static final int LEVELS = 5;
     private static final BigDecimal STEP = new BigDecimal("0.002"); // 0,2 % entre deux niveaux
 
-    private final ExchangeProperties properties;
-    private final MatchingEngine matchingEngine;
-    private final TradingService tradingService;
-    private final SymbolService symbolService;
-
-    public MarketSeeder(ExchangeProperties properties, MatchingEngine matchingEngine,
-                        TradingService tradingService, SymbolService symbolService) {
-        this.properties = properties;
-        this.matchingEngine = matchingEngine;
-        this.tradingService = tradingService;
-        this.symbolService = symbolService;
-    }
+    @Autowired
+    private ExchangeProperties properties;
+    @Autowired
+    private MatchingEngine matchingEngine;
+    @Autowired
+    private TradingService tradingService;
+    @Autowired
+    private SymbolService symbolService;
 
     @Override
     public void run(String... args) {

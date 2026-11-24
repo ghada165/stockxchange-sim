@@ -12,8 +12,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,16 +26,14 @@ import java.util.List;
  * (authentication.getName() = claim "sub"): impossible d'agir au nom d'un autre.
  */
 @RestController
+@PreAuthorize("hasRole('TRADER')") // double la regle d'URL de SecurityConfig (defense en profondeur)
 @RequestMapping("/api/orders")
 @Tag(name = "Ordres", description = "Passer, annuler et consulter ses ordres (role TRADER)")
 @SecurityRequirement(name = OpenApiConfig.BEARER)
 public class OrderController {
 
-    private final TradingService tradingService;
-
-    public OrderController(TradingService tradingService) {
-        this.tradingService = tradingService;
-    }
+    @Autowired
+    private TradingService tradingService;
 
     /** POST /api/orders : passer un ordre LIMIT ou MARKET. */
     @PostMapping

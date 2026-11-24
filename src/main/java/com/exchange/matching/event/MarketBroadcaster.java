@@ -4,6 +4,7 @@ import com.exchange.matching.dto.OrderBookResponse;
 import com.exchange.matching.dto.TradeResponse;
 import com.exchange.matching.event.MarketEvent.OrderBookUpdated;
 import com.exchange.matching.event.MarketEvent.TradeExecuted;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
@@ -19,11 +20,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class MarketBroadcaster {
 
-    private final SimpMessagingTemplate messagingTemplate;
-
-    public MarketBroadcaster(SimpMessagingTemplate messagingTemplate) {
-        this.messagingTemplate = messagingTemplate;
-    }
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
 
     public void publish(MarketEvent event) {
         switch (event) {

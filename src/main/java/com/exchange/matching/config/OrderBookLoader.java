@@ -7,6 +7,7 @@ import com.exchange.matching.persistence.entity.OrderEntity;
 import com.exchange.matching.persistence.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -25,13 +26,10 @@ public class OrderBookLoader implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(OrderBookLoader.class);
 
-    private final OrderRepository orderRepository;
-    private final MatchingEngine matchingEngine;
-
-    public OrderBookLoader(OrderRepository orderRepository, MatchingEngine matchingEngine) {
-        this.orderRepository = orderRepository;
-        this.matchingEngine = matchingEngine;
-    }
+    @Autowired
+    private OrderRepository orderRepository;
+    @Autowired
+    private MatchingEngine matchingEngine;
 
     @Override
     public void run(String... args) {

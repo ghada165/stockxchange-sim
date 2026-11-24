@@ -95,7 +95,7 @@ function AuthForms() {
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-paper-500">
-          Mot de passe {mode === "register" && "(8 caractères minimum)"}
+          Mot de passe {mode === "register" && "(8 caractères minimum, au moins une lettre et un chiffre)"}
           <input
             required
             type="password"
@@ -104,6 +104,9 @@ function AuthForms() {
             onChange={(e) => setPassword(e.target.value)}
             className={input}
             minLength={mode === "register" ? 8 : undefined}
+            maxLength={72}
+            pattern={mode === "register" ? "(?=.*[A-Za-z])(?=.*\\d).+" : undefined}
+            title={mode === "register" ? "Au moins une lettre et un chiffre" : undefined}
           />
         </label>
         {mode === "register" && (
